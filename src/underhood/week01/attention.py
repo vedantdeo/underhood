@@ -1,0 +1,58 @@
+"""Attention from scratch. Week 1, Track B.
+
+The tests in tests/test_attention.py compare your implementation against
+torch.nn.functional.scaled_dot_product_attention, so you are checking your understanding against
+the real thing, not against my reading of it. Order: causal_mask, single_head_attention, then
+MultiHeadAttention.forward.
+
+Reference: "The Illustrated Transformer", then the attention section of Karpathy's "Let's build
+GPT".
+"""
+
+from __future__ import annotations
+
+import torch
+from torch import Tensor, nn
+
+
+def causal_mask(t: int, device: torch.device | None = None) -> Tensor:
+    """A (t, t) boolean mask: True where position i may attend to position j, i.e. j <= i."""
+    raise NotImplementedError
+
+
+def single_head_attention(q: Tensor, k: Tensor, v: Tensor, causal: bool = False) -> Tensor:
+    """Scaled dot-product attention for one head.
+
+    q, k, v: (batch, t, d). Returns (batch, t, d).
+    scores = q @ k^T / sqrt(d); mask future positions with -inf if causal; softmax over the last
+    axis; weighted sum of v.
+    """
+    raise NotImplementedError
+
+
+class MultiHeadAttention(nn.Module):
+    """Split d_model into n_heads heads, attend in each, concatenate, project.
+
+    Keep these attribute names; the tests use them to build a reference from your own weights.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, causal: bool = True) -> None:
+        super().__init__()
+        if d_model % n_heads:
+            raise ValueError(f"d_model={d_model} is not divisible by n_heads={n_heads}")
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.d_head = d_model // n_heads
+        self.causal = causal
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """x: (batch, t, d_model) -> (batch, t, d_model).
+
+        Project to q, k, v; reshape each to (batch, n_heads, t, d_head); attend per head with the
+        causal flag; merge heads back to (batch, t, d_model); apply out_proj.
+        """
+        raise NotImplementedError

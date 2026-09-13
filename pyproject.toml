@@ -1,0 +1,52 @@
+[project]
+name = "underhood"
+version = "0.1.0"
+description = "The from-scratch half of the Entropic plan: tokenizers, attention, GPT, KV cache, LoRA, DPO."
+readme = "README.md"
+authors = [
+    { name = "vedantdeo", email = "vedantdeo1@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.3",
+    "tiktoken>=0.14.0",
+    "torch>=2.14.0",
+]
+
+[project.scripts]
+underhood-check = "underhood.device:main"
+underhood-fetch = "underhood.data:main"
+underhood-bpe-compare = "underhood.week01.compare_tokenizers:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-watcher>=0.6.3",
+    "ruff>=0.16.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "A"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pytest-watcher]
+now = true
+clear = true
+patterns = ["*.py"]
