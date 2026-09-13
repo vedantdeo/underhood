@@ -17,7 +17,7 @@ from torch import Tensor, nn
 
 def causal_mask(t: int, device: torch.device | None = None) -> Tensor:
     """A (t, t) boolean mask: True where position i may attend to position j, i.e. j <= i."""
-    raise NotImplementedError
+    return torch.tril(torch.ones(t, t, device=device, dtype=torch.bool))
 
 
 def single_head_attention(q: Tensor, k: Tensor, v: Tensor, causal: bool = False) -> Tensor:
@@ -27,7 +27,13 @@ def single_head_attention(q: Tensor, k: Tensor, v: Tensor, causal: bool = False)
     scores = q @ k^T / sqrt(d); mask future positions with -inf if causal; softmax over the last
     axis; weighted sum of v.
     """
-    raise NotImplementedError
+    d = q.size(-1)
+    scores = q @ k.transpose(-2, -1) / (d**0.5)
+    if causal:
+        mask = causal_mask(scores.size(-1), device=scores.device)
+        scores = scores.masked_fill(~mask, float("-inf"))
+    weights = torch.softmax(scores, dim=-1)
+    return weights @ v
 
 
 class MultiHeadAttention(nn.Module):
@@ -55,4 +61,10 @@ class MultiHeadAttention(nn.Module):
         Project to q, k, v; reshape each to (batch, n_heads, t, d_head); attend per head with the
         causal flag; merge heads back to (batch, t, d_model); apply out_proj.
         """
-        raise NotImplementedError
+        b, t, _ = x.shape
+        q, k, v = (
+            proj(x).view(b, t, self.n_heads, self.d_head).transpose(1, 2)
+            for proj in (self.q_proj, self.k_proj, self.v_proj)
+        )
+        heads = single_head_attention(q, k, v, causal=self.causal)
+        return self.out_proj(heads.transpose(1, 2).reshape(b, t, self.d_model))
