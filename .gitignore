@@ -14,3 +14,6 @@ data/
 checkpoints/
 .pytest_cache/
 .ruff_cache/
+
+# Third-party reference implementations and papers
+reference/
