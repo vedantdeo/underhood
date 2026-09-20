@@ -10,7 +10,7 @@ uv run underhood-train
 from __future__ import annotations
 
 import time
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import torch
 from torch import Tensor
@@ -38,7 +38,9 @@ def split_data(ids: list[int], val_fraction: float = config.VAL_FRACTION) -> tup
     Held out from the end rather than sampled at random: neighbouring windows of text overlap, so
     a random split leaks the training set into validation almost everywhere.
     """
-    raise NotImplementedError
+    tokens = torch.tensor(ids, dtype=torch.long)
+    cut = len(tokens) - int(len(tokens) * val_fraction)
+    return tokens[:cut], tokens[cut:]
 
 
 def get_batch(
@@ -53,7 +55,10 @@ def get_batch(
     Every start offset must leave room for both, so offsets come from [0, len(data_) - block_size).
     Draw them with `generator` when one is given, so a test can reproduce a batch.
     """
-    raise NotImplementedError
+    starts = torch.randint(len(data_) - block_size, (batch_size,), generator=generator)
+    x = torch.stack([data_[start : start + block_size] for start in starts])
+    y = torch.stack([data_[start + 1 : start + 1 + block_size] for start in starts])
+    return x.to(device), y.to(device)
 
 
 def estimate_loss(
@@ -66,10 +71,23 @@ def estimate_loss(
 ) -> dict[str, float]:
     """Mean loss over eval_iters batches of each split, keyed by the same names as `splits`.
 
-    Runs with gradients off and the model in eval(), and leaves it back in train() on the way out.
-    A single batch's loss is too noisy to read a curve from; this is the number worth printing.
+    Runs with gradients off and the model in eval(), then puts it back in whichever mode it
+    found it. A single batch's loss is too noisy to read a curve from; this is the one worth
+    printing.
     """
-    raise NotImplementedError
+    was_training = model.training
+    model.eval()
+    losses: dict[str, float] = {}
+    with torch.no_grad():
+        for name, split in splits.items():
+            total = 0.0
+            for _ in range(eval_iters):
+                x, y = get_batch(split, model.block_size, batch_size, device, generator)
+                _, loss = cast(tuple[Tensor, Tensor], model(x, y))
+                total += loss.item()
+            losses[name] = total / eval_iters
+    model.train(was_training)
+    return losses
 
 
 def train(
@@ -89,13 +107,32 @@ def train(
     Evaluate at iteration 0, every eval_interval after that, and once more at the end, so the
     returned curve always has a first and last row to compare.
     """
-    raise NotImplementedError
+    model.train()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    splits = {"train": train_data, "val": val_data}
+    history: list[Snapshot] = []
+
+    def record(iteration: int) -> None:
+        losses = estimate_loss(model, splits, device, batch_size, eval_iters, generator)
+        history.append(Snapshot(iteration, losses["train"], losses["val"]))
+
+    for iteration in range(max_iters):
+        if iteration % eval_interval == 0:
+            record(iteration)
+        x, y = get_batch(train_data, model.block_size, batch_size, device, generator)
+        _, loss = cast(tuple[Tensor, Tensor], model(x, y))
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+    record(max_iters)
+    return history
 
 
 def _encoded_corpus() -> tuple[BPETokenizer, list[int]]:
     """Train the BPE on tiny Shakespeare and encode it, caching the result under data/.
 
-    The week-1 BPE is the naive one, so this is minutes of Python the first time and instant after.
+    The BPE here is the naive one, so this is about 35s of Python the first time, instant after.
     """
     text = data.tiny_shakespeare().read_text(encoding="utf-8")
     if ENCODED.exists():
