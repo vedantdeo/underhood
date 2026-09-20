@@ -1,11 +1,11 @@
-"""Specification for week01/attention.py, checked against torch's own attention."""
+"""Specification for model/attention.py, checked against torch's own attention."""
 
 from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
 
-from underhood.week01.attention import MultiHeadAttention, causal_mask, single_head_attention
+from underhood.model.attention import MultiHeadAttention, causal_mask, single_head_attention
 
 torch.manual_seed(0)
 

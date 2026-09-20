@@ -16,7 +16,10 @@ dependencies = [
 [project.scripts]
 underhood-check = "underhood.device:main"
 underhood-fetch = "underhood.data:main"
-underhood-bpe-compare = "underhood.week01.compare_tokenizers:main"
+underhood-bpe-compare = "underhood.tokenizer.compare:main"
+underhood-train = "underhood.training.loop:main"
+underhood-sample = "underhood.inference.sampling:main"
+underhood-kv-bench = "underhood.inference.kv_cache:main"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
@@ -38,6 +41,7 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "A"]
 
 [tool.pyright]
+exclude = [".venv", "reference"]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 venvPath = "."

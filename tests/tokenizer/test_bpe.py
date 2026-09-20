@@ -1,10 +1,10 @@
-"""Specification for week01/bpe.py. Make these green from the top down."""
+"""Specification for tokenizer/bpe.py. Make these green from the top down."""
 
 from __future__ import annotations
 
 import pytest
 
-from underhood.week01.bpe import BPETokenizer, get_stats, merge
+from underhood.tokenizer.bpe import BPETokenizer, get_stats, merge
 
 SAMPLE = (
     "The quick brown fox jumps over the lazy dog. The dog, being lazy, did not react. "

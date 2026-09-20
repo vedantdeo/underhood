@@ -1,7 +1,7 @@
-"""Byte-pair encoding from scratch. Week 1, Track B.
+"""Byte-pair encoding from scratch.
 
-The tests in tests/test_bpe.py are the specification. Make them green one function at a time:
-get_stats, then merge, then train, then encode, then decode.
+The tests in tests/tokenizer/test_bpe.py are the specification. Make them green one function at a
+time: get_stats, then merge, then train, then encode, then decode.
 
 Reference: Karpathy's "Let's build the GPT tokenizer" and minbpe. Do not read minbpe's code until
 yours passes; then read it and compare. When done, run `uv run underhood-bpe-compare` to see how

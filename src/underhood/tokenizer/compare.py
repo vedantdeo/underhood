@@ -12,7 +12,7 @@ from __future__ import annotations
 import tiktoken
 
 from underhood.data import tiny_shakespeare
-from underhood.week01.bpe import BPETokenizer
+from underhood.tokenizer.bpe import BPETokenizer
 
 
 def main(vocab_size: int = 512, train_chars: int = 200_000) -> None:

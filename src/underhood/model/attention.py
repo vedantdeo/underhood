@@ -1,6 +1,6 @@
-"""Attention from scratch. Week 1, Track B.
+"""Attention from scratch.
 
-The tests in tests/test_attention.py compare your implementation against
+The tests in tests/model/test_attention.py compare your implementation against
 torch.nn.functional.scaled_dot_product_attention, so you are checking your understanding against
 the real thing, not against my reading of it. Order: causal_mask, single_head_attention, then
 MultiHeadAttention.forward.
