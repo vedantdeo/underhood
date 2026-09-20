@@ -77,3 +77,22 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 - `src/underhood/training/`     batching and the training loop
 - `src/underhood/inference/`    sampling and the KV cache
 - `tests/`                      the specification, one file per module, run in dependency order
+
+## Questions parked for later
+
+Things worth measuring on your own model once it trains, rather than arguing about in advance.
+
+**How much does the positional path reach the logits?** With weight tying, `lm_head` is `tok_emb`
+transposed, so a logit picks up a term `e_v · p_t` — the dot product of a token embedding with a
+position embedding. That is a learned position-conditional prior over the vocabulary, which may be
+useful signal or may be leakage. Take a trained checkpoint, compute logits normally, then again
+from `h - pos_emb(t)`, and compare the two distributions: KL, or how often the top-1 token agrees.
+Near-total agreement means the path carries nothing at the output; 85% means it is doing real work
+and removing it would cost you.
+
+Subtracting it in `GPT.forward` is not obviously the fix either way — `ln_f` sits between the
+residual stream and `lm_head`, so subtracting before the norm gets partly undone by it, and
+subtracting after fights a scale mismatch. The architectures that took this seriously removed
+absolute position from the residual stream rather than taking it back out: RoPE rotates `q` and `k`
+inside attention and adds nothing to the stream (`reference/roformer-rope.pdf`), and NoPE drops
+positional encoding entirely, on the argument that a causal mask already implies order.

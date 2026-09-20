@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from underhood.model.attention import MultiHeadAttention, causal_mask, single_head_attention
 
@@ -72,3 +73,28 @@ def test_multi_head_rejects_indivisible_dims() -> None:
     except ValueError:
         return
     raise AssertionError("expected ValueError for d_model not divisible by n_heads")
+
+
+def test_multi_head_has_the_two_dropout_sites_gpt2_used() -> None:
+    """GPT-2 drops the attention weights and the output projection, so two per attention."""
+    mha = MultiHeadAttention(d_model=32, n_heads=4, dropout=0.1)
+    sites = [module for module in mha.modules() if isinstance(module, nn.Dropout)]
+    assert len(sites) == 2, f"expected weights and residual dropout, found {len(sites)}"
+
+
+def test_multi_head_dropout_is_off_in_eval() -> None:
+    mha = MultiHeadAttention(d_model=32, n_heads=4, dropout=0.5).eval()
+    x = torch.randn(2, 6, 32)
+    assert torch.equal(mha(x), mha(x)), "eval() must be deterministic however high dropout is"
+
+
+def test_multi_head_dropout_perturbs_training() -> None:
+    mha = MultiHeadAttention(d_model=32, n_heads=4, dropout=0.5).train()
+    x = torch.randn(2, 6, 32)
+    assert not torch.equal(mha(x), mha(x)), "train() with dropout must vary between calls"
+
+
+def test_multi_head_is_deterministic_in_training_without_dropout() -> None:
+    mha = MultiHeadAttention(d_model=32, n_heads=4, dropout=0.0).train()
+    x = torch.randn(2, 6, 32)
+    assert torch.equal(mha(x), mha(x)), "a rate of zero must be a genuine no-op"

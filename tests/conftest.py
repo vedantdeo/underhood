@@ -38,10 +38,11 @@ class TinyDims(NamedTuple):
     d_model: int = 16
     n_heads: int = 4
     n_layers: int = 2
+    dropout: float = 0.0
 
 
 class GptFactory(Protocol):
-    def __call__(self, **overrides: int) -> GPT: ...
+    def __call__(self, **overrides: float) -> GPT: ...
 
 
 @pytest.fixture
@@ -51,9 +52,9 @@ def dims() -> TinyDims:
 
 @pytest.fixture
 def make_gpt(dims: TinyDims) -> GptFactory:
-    """Build a deterministic, dropout-free GPT, overriding any of the tiny dimensions by name."""
+    """Build a deterministic GPT, overriding any of the tiny dimensions by name."""
 
-    def build(**overrides: int) -> GPT:
+    def build(**overrides: float) -> GPT:
         wanted = dims._replace(**overrides)
         torch.manual_seed(0)
         return GPT(
@@ -62,7 +63,7 @@ def make_gpt(dims: TinyDims) -> GptFactory:
             d_model=wanted.d_model,
             n_heads=wanted.n_heads,
             n_layers=wanted.n_layers,
-            dropout=0.0,
+            dropout=wanted.dropout,
         ).eval()
 
     return build

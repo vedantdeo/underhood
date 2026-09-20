@@ -7,6 +7,7 @@ import math
 import pytest
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from tests.conftest import GptFactory, TinyDims
 from underhood.model.gpt import GPT, Block, FeedForward
@@ -112,3 +113,22 @@ def test_gpt_rejects_a_context_longer_than_its_block(tiny_gpt: GPT, dims: TinyDi
 
 def test_gpt_stacks_the_layers_it_was_asked_for(make_gpt: GptFactory) -> None:
     assert len(make_gpt(n_layers=3).blocks) == 3
+
+
+def test_gpt_has_every_dropout_site_gpt2_used(make_gpt: GptFactory, dims: TinyDims) -> None:
+    """One after the embedding sum, then three per block: weights, and both residual projections."""
+    model = make_gpt(dropout=0.1)
+    sites = [module for module in model.modules() if isinstance(module, nn.Dropout)]
+    assert len(sites) == 3 * dims.n_layers + 1, f"found {len(sites)} nn.Dropout modules"
+
+
+def test_gpt_dropout_is_off_in_eval(make_gpt: GptFactory, dims: TinyDims) -> None:
+    model = make_gpt(dropout=0.5).eval()
+    idx = torch.randint(0, dims.vocab_size, (2, 5))
+    assert torch.equal(model(idx)[0], model(idx)[0])
+
+
+def test_gpt_dropout_perturbs_training(make_gpt: GptFactory, dims: TinyDims) -> None:
+    model = make_gpt(dropout=0.5).train()
+    idx = torch.randint(0, dims.vocab_size, (2, 5))
+    assert not torch.equal(model(idx)[0], model(idx)[0])
