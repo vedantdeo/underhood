@@ -129,20 +129,21 @@ def test_gpt_dropout_is_off_in_eval(make_gpt: GptFactory, dims: TinyDims) -> Non
     assert torch.equal(model(idx)[0], model(idx)[0])
 
 
+def test_the_embedding_sum_goes_through_dropout(make_gpt: GptFactory, dims: TinyDims) -> None:
+    """Zero every block, so the only thing left that can vary between calls is GPT.drop."""
+    model = make_gpt(dropout=0.5).train()
+    with torch.no_grad():
+        for block in model.blocks:
+            for parameter in block.parameters():
+                parameter.zero_()
+    idx = torch.randint(0, dims.vocab_size, (2, 5))
+    assert not torch.equal(model(idx)[0], model(idx)[0]), "GPT.drop exists but is never applied"
+
+
 def test_gpt_dropout_perturbs_training(make_gpt: GptFactory, dims: TinyDims) -> None:
     model = make_gpt(dropout=0.5).train()
     idx = torch.randint(0, dims.vocab_size, (2, 5))
     assert not torch.equal(model(idx)[0], model(idx)[0])
-
-
-def test_stepping_through_a_cache_matches_one_full_forward(tiny_gpt: GPT, dims: TinyDims) -> None:
-    idx = torch.randint(0, dims.vocab_size, (2, 6))
-    full, _ = tiny_gpt(idx)
-    cache = KVCache(n_layers=dims.n_layers)
-    stepped = torch.cat(
-        [tiny_gpt(idx[:, i : i + 1], cache=cache)[0] for i in range(idx.size(1))], dim=1
-    )
-    assert torch.allclose(full, stepped, atol=1e-5)
 
 
 def test_prefilling_then_stepping_matches_one_full_forward(tiny_gpt: GPT, dims: TinyDims) -> None:

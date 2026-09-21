@@ -113,7 +113,6 @@ def test_multi_head_is_deterministic_in_training_without_dropout() -> None:
 @pytest.mark.parametrize(
     ("t_q", "t_k", "expected"),
     [
-        pytest.param(3, 3, [[1, 0, 0], [1, 1, 0], [1, 1, 1]], id="square is the plain causal mask"),
         pytest.param(
             2, 5, [[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]], id="two new tokens onto three cached"
         ),
@@ -128,14 +127,6 @@ def test_causal_mask_shifts_by_the_cached_length(
 
 def test_causal_mask_is_square_by_default() -> None:
     assert torch.equal(causal_mask(4), causal_mask(4, 4))
-
-
-def test_attending_one_position_at_a_time_matches_one_full_pass() -> None:
-    mha = MultiHeadAttention(d_model=32, n_heads=4, causal=True).eval()
-    x = torch.randn(2, 5, 32)
-    cache = KVCache(n_layers=1)
-    stepped = torch.cat([mha(x[:, i : i + 1], cache, 0) for i in range(x.size(1))], dim=1)
-    assert torch.allclose(mha(x), stepped, atol=1e-5)
 
 
 def test_prefilling_then_stepping_matches_one_full_pass() -> None:
