@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from tests.conftest import GptFactory, TinyDims
+from underhood.model.attention import KVCache
 from underhood.model.gpt import GPT, Block, FeedForward
 
 D_MODEL, N_HEADS = 16, 4
@@ -132,3 +133,30 @@ def test_gpt_dropout_perturbs_training(make_gpt: GptFactory, dims: TinyDims) -> 
     model = make_gpt(dropout=0.5).train()
     idx = torch.randint(0, dims.vocab_size, (2, 5))
     assert not torch.equal(model(idx)[0], model(idx)[0])
+
+
+def test_stepping_through_a_cache_matches_one_full_forward(tiny_gpt: GPT, dims: TinyDims) -> None:
+    idx = torch.randint(0, dims.vocab_size, (2, 6))
+    full, _ = tiny_gpt(idx)
+    cache = KVCache(n_layers=dims.n_layers)
+    stepped = torch.cat(
+        [tiny_gpt(idx[:, i : i + 1], cache=cache)[0] for i in range(idx.size(1))], dim=1
+    )
+    assert torch.allclose(full, stepped, atol=1e-5)
+
+
+def test_prefilling_then_stepping_matches_one_full_forward(tiny_gpt: GPT, dims: TinyDims) -> None:
+    idx = torch.randint(0, dims.vocab_size, (2, 6))
+    full, _ = tiny_gpt(idx)
+    cache = KVCache(n_layers=dims.n_layers)
+    prefilled, _ = tiny_gpt(idx[:, :4], cache=cache)
+    stepped = torch.cat([tiny_gpt(idx[:, i : i + 1], cache=cache)[0] for i in (4, 5)], dim=1)
+    assert torch.allclose(full, torch.cat((prefilled, stepped), dim=1), atol=1e-5)
+
+
+def test_cached_positions_count_against_the_block(make_gpt: GptFactory, dims: TinyDims) -> None:
+    model = make_gpt(block_size=4)
+    cache = KVCache(n_layers=dims.n_layers)
+    model(torch.zeros((1, 3), dtype=torch.long), cache=cache)
+    with pytest.raises(ValueError):
+        model(torch.zeros((1, 2), dtype=torch.long), cache=cache)  # 3 cached + 2 new > 4

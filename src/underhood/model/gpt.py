@@ -10,10 +10,12 @@ reference/nanogpt_model.py until yours passes; then read both and compare.
 
 from __future__ import annotations
 
+from typing import cast
+
 from torch import Tensor, arange, nn
 
 from underhood import config
-from underhood.model.attention import MultiHeadAttention
+from underhood.model.attention import KVCache, MultiHeadAttention
 
 
 class FeedForward(nn.Module):
@@ -57,9 +59,13 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(d_model)
         self.ff = FeedForward(d_model, dropout)
 
-    def forward(self, x: Tensor) -> Tensor:
-        """x + attn(ln1(x)), then that + ff(ln2(x)). Shape in, same shape out."""
-        x = x + self.attn(self.ln1(x))
+    def forward(self, x: Tensor, cache: KVCache | None = None, layer: int = 0) -> Tensor:
+        """x + attn(ln1(x)), then that + ff(ln2(x)). Shape in, same shape out.
+
+        The cache and layer index are handed straight to attention, the only sublayer with any
+        memory of other positions.
+        """
+        x = x + self.attn(self.ln1(x), cache, layer)
         x = x + self.ff(self.ln2(x))
         return x
 
@@ -67,8 +73,9 @@ class Block(nn.Module):
 class GPT(nn.Module):
     """Token and position embeddings, n_layers blocks, a final norm, a projection back to vocab.
 
-    Keep these attribute names: the tests read them, and the KV cache in inference/kv_cache.py
-    walks `blocks` one at a time rather than calling `forward`.
+    Keep these attribute names; the tests read them. Pass a KVCache to forward and the model
+    extends a sequence it has already seen instead of reading one from scratch — which is the
+    whole of generation, and costs the model class one optional argument.
     """
 
     block_size: int
@@ -97,23 +104,28 @@ class GPT(nn.Module):
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
-    def forward(self, idx: Tensor, targets: Tensor | None = None) -> tuple[Tensor, Tensor | None]:
+    def forward(
+        self, idx: Tensor, targets: Tensor | None = None, cache: KVCache | None = None
+    ) -> tuple[Tensor, Tensor | None]:
         """idx: (batch, t) token ids -> logits (batch, t, vocab_size), and a loss if targets given.
 
-        Positions are 0..t-1, so t must not exceed block_size — raise ValueError when it does,
-        rather than letting the embedding lookup fail somewhere deeper. With targets (batch, t),
-        the loss is cross-entropy over batch and time flattened together.
+        Positions start where the cache leaves off, so t plus whatever is already cached must not
+        exceed block_size — raise ValueError when it does, rather than letting the embedding
+        lookup fail somewhere deeper. With targets (batch, t), the loss is cross-entropy over
+        batch and time flattened together.
         """
 
         _, t = idx.shape
-        if t > self.block_size:
+        past = 0 if cache is None else cache.t
+        if past + t > self.block_size:
             raise ValueError(
-                f"Cannot forward sequence of length {t}, block size is only {self.block_size}"
+                f"Cannot forward {t} positions onto {past} already cached; "
+                f"block size is only {self.block_size}"
             )
-        pos = arange(t, device=idx.device).unsqueeze(0)  # (1, t)
+        pos = arange(past, past + t, device=idx.device)  # (t,)
         x = self.drop(self.tok_emb(idx) + self.pos_emb(pos))  # (batch, t, d_model)
-        for block in self.blocks:
-            x = block(x)
+        for layer, block in enumerate(self.blocks):
+            x = cast(Tensor, block(x, cache, layer))
         x = self.ln_f(x)
         logits = self.lm_head(x)  # (batch, t, vocab_size)
 

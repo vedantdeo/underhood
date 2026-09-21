@@ -13,6 +13,7 @@ from underhood.inference.sampling import (
     top_k_filter,
     top_p_filter,
 )
+from underhood.model.attention import KVCache
 from underhood.model.gpt import GPT
 
 PEAKED = torch.tensor([[2.0, 1.0, 0.0, -1.0]])
@@ -135,3 +136,49 @@ def test_low_temperature_concentrates_the_output(tiny_gpt: GPT, dims: TinyDims) 
     hot = generate(tiny_gpt, prompt, 40, temperature=2.0, generator=seeded)
     distinct = (len(set(cold[0].tolist())), len(set(hot[0].tolist())))
     assert distinct[0] < distinct[1], f"cold then hot produced {distinct} distinct tokens"
+
+
+def test_a_cache_changes_nothing_but_the_speed(tiny_gpt: GPT, dims: TinyDims) -> None:
+    """Greedy on both sides, so the cache is the only thing that could explain a difference."""
+    prompt = torch.randint(0, dims.vocab_size, (2, 2))
+    plain = generate(tiny_gpt, prompt, 6, top_k=1, top_p=None)
+    cached = generate(
+        tiny_gpt, prompt, 6, top_k=1, top_p=None, cache=KVCache(n_layers=dims.n_layers)
+    )
+    assert torch.equal(plain, cached), f"cached {cached.tolist()} != plain {plain.tolist()}"
+
+
+def test_a_cached_prompt_goes_through_in_one_prefill_pass(
+    tiny_gpt: GPT, dims: TinyDims, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reason GPT.forward takes a cache: the prompt need not be fed a token at a time."""
+    widths: list[int] = []
+    original = tiny_gpt.forward
+
+    def counting(
+        idx: torch.Tensor, targets: torch.Tensor | None = None, cache: KVCache | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        widths.append(idx.size(1))
+        return original(idx, targets, cache)
+
+    monkeypatch.setattr(tiny_gpt, "forward", counting)
+    prompt = torch.randint(0, dims.vocab_size, (1, 4))
+    generate(tiny_gpt, prompt, 3, top_k=1, top_p=None, cache=KVCache(n_layers=dims.n_layers))
+    assert widths == [4, 1, 1], f"expected one prefill then single steps, got {widths}"
+
+
+def test_without_a_cache_every_step_re_reads_the_context(
+    tiny_gpt: GPT, dims: TinyDims, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    widths: list[int] = []
+    original = tiny_gpt.forward
+
+    def counting(
+        idx: torch.Tensor, targets: torch.Tensor | None = None, cache: KVCache | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        widths.append(idx.size(1))
+        return original(idx, targets, cache)
+
+    monkeypatch.setattr(tiny_gpt, "forward", counting)
+    generate(tiny_gpt, torch.randint(0, dims.vocab_size, (1, 4)), 3, top_k=1, top_p=None)
+    assert widths == [4, 5, 6], "the uncached path grows its context by one every step"

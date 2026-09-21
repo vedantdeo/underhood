@@ -19,8 +19,8 @@ DEPENDENCY_ORDER = (
     "tests/model/test_attention.py",
     "tests/model/test_gpt.py",
     "tests/training/test_loop.py",
-    "tests/inference/test_kv_cache.py",
     "tests/inference/test_sampling.py",
+    "tests/inference/test_benchmark.py",
 )
 
 

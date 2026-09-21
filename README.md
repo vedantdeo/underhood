@@ -25,7 +25,7 @@ Once a module is green, its script does something:
 uv run underhood-bpe-compare  # your tokenizer's compression against tiktoken's
 uv run underhood-train        # loss curve, ms/iter, and a checkpoint under data/
 uv run underhood-sample       # generate from that checkpoint
-uv run underhood-kv-bench     # cached against uncached generation at 512 tokens
+uv run underhood-kv-bench     # generation with the cache against without, at 512 tokens
 ```
 
 ## Editor
@@ -59,8 +59,8 @@ the only place the weeks appear.
 | 1 | `model/attention.py` | causal mask, single head, multi-head | `torch.nn.functional.scaled_dot_product_attention` |
 | 2 | `model/gpt.py` | FeedForward, Block, GPT | cross-entropy at init, causality, its own logits |
 | 2 | `training/loop.py` | split, batches, loss estimate, the loop itself | loss curve on MPS |
-| 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions |
-| 2 | `inference/kv_cache.py` | KVCache, attend_step, step, both generators | the uncached path, token for token; speedup at 512 |
+| 2 | `model/attention.py` | KVCache, and a mask that widens over cached keys | stepping through a cache matches one full forward |
+| 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions; the same tokens with a cache and without |
 | 4 | `finetune/lora.py`, `finetune/dpo.py` | LoRA layer; DPO loss | toy fine-tune eval; gradient check |
 | 5 | cloud GPU day | a 10 to 30M GPT on a rented A100 | loss curve vs the MPS run |
 
@@ -73,9 +73,9 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 - `src/underhood/device.py`     device selection and the matmul check
 - `src/underhood/data.py`       corpus download
 - `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
-- `src/underhood/model/`        attention, and the GPT that stacks it
+- `src/underhood/model/`        attention, the KV cache, and the GPT that stacks them
 - `src/underhood/training/`     batching and the training loop
-- `src/underhood/inference/`    sampling and the KV cache
+- `src/underhood/inference/`    sampling, and the benchmark that prices the KV cache
 - `tests/`                      the specification, one file per module, run in dependency order
 
 ## Questions parked for later
