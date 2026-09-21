@@ -39,3 +39,7 @@ TOP_P = 0.95
 KV_BENCH_BLOCK_SIZE = 1024
 KV_BENCH_TOKENS = 512
 KV_BENCH_REPEATS = 3
+
+# Batch sweep, ascending: about granularity rather than length, so the sequences are shorter.
+KV_BENCH_BATCHES = (1, 16, 64, 256)
+KV_BENCH_BATCH_TOKENS = 64

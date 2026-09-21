@@ -25,7 +25,7 @@ Once a module is green, its script does something:
 uv run underhood-bpe-compare  # your tokenizer's compression against tiktoken's
 uv run underhood-train        # loss curve, ms/iter, and a checkpoint under data/
 uv run underhood-sample       # generate from that checkpoint
-uv run underhood-kv-bench     # generation with the cache against without, at 512 tokens
+uv run underhood-kv-bench     # what the cache is worth, then what batching is worth
 ```
 
 ## Editor
