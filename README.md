@@ -26,6 +26,7 @@ uv run underhood-bpe-compare  # your tokenizer's compression against tiktoken's
 uv run underhood-train        # loss curve, ms/iter, and a checkpoint under data/
 uv run underhood-sample       # generate from that checkpoint
 uv run underhood-kv-bench     # what the cache is worth, then what batching is worth
+uv run underhood-quant-bench  # Llama 3.2 3B in bf16 against its own 8- and 4-bit conversions
 ```
 
 ## Editor
@@ -61,6 +62,7 @@ the only place the weeks appear.
 | 2 | `training/loop.py` | split, batches, loss estimate, the loop itself | loss curve on MPS |
 | 2 | `model/attention.py` | KVCache, and a mask that widens over cached keys | stepping through a cache matches one full forward |
 | 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions; the same tokens with a cache and without |
+| 3 | `inference/quantization.py` | bf16 against 8- and 4-bit conversions of the same checkpoint: TTFT, decode rate, memory | KL divergence from bf16's next-token distributions; the side-by-side outputs |
 | 4 | `finetune/lora.py`, `finetune/dpo.py` | LoRA layer; DPO loss | toy fine-tune eval; gradient check |
 | 5 | cloud GPU day | a 10 to 30M GPT on a rented A100 | loss curve vs the MPS run |
 
@@ -75,7 +77,7 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 - `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
 - `src/underhood/model/`        attention, the KV cache, and the GPT that stacks them
 - `src/underhood/training/`     batching and the training loop
-- `src/underhood/inference/`    sampling, and the benchmark that prices the KV cache
+- `src/underhood/inference/`    sampling, the benchmark that prices the KV cache, and quantization
 - `tests/`                      the specification, one file per module, run in dependency order
 
 ## Questions parked for later

@@ -43,3 +43,11 @@ KV_BENCH_REPEATS = 3
 # Batch sweep, ascending: about granularity rather than length, so the sequences are shorter.
 KV_BENCH_BATCHES = (1, 16, 64, 256)
 KV_BENCH_BATCH_TOKENS = 64
+
+# Local models (mlx-lm): one bf16 checkpoint, and every quantized variant converted from it here.
+LOCAL_MODEL = "mlx-community/Llama-3.2-3B-Instruct-bf16"
+QUANT_BITS = (8, 4)
+QUANT_GROUP_SIZE = 64
+QUANT_MAX_TOKENS = 256
+QUANT_PREFILL_LENGTHS = (128, 512, 2048)
+QUANT_REPEATS = 3

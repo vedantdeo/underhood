@@ -21,6 +21,7 @@ DEPENDENCY_ORDER = (
     "tests/training/test_loop.py",
     "tests/inference/test_sampling.py",
     "tests/inference/test_benchmark.py",
+    "tests/inference/test_quantization.py",
 )
 
 
