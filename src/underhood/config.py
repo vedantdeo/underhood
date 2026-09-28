@@ -51,3 +51,11 @@ QUANT_GROUP_SIZE = 64
 QUANT_MAX_TOKENS = 256
 QUANT_PREFILL_LENGTHS = (128, 512, 2048)
 QUANT_REPEATS = 3
+
+# LoRA: the update's rank, its scale as alpha / rank, and the projections that get one.
+LORA_RANK = 8
+LORA_ALPHA = 16.0
+LORA_TARGETS = ("q_proj", "v_proj")
+
+# DPO: how hard the loss holds the policy to its reference; smaller lets it drift further.
+DPO_BETA = 0.1

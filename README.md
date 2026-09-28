@@ -78,6 +78,7 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 - `src/underhood/model/`        attention, the KV cache, and the GPT that stacks them
 - `src/underhood/training/`     batching and the training loop
 - `src/underhood/inference/`    sampling, the benchmark that prices the KV cache, and quantization
+- `src/underhood/finetune/`     LoRA, and the DPO loss
 - `tests/`                      the specification, one file per module, run in dependency order
 
 ## Questions parked for later
