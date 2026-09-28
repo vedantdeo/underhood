@@ -1,13 +1,13 @@
-"""The toy fine-tune: mlx-lm's LoRA on a small local model, over entropic's template headlines.
+"""The toy fine-tune: mlx-lm's LoRA on a small local model, over aigent's template headlines.
 
 uv run underhood-toy-lora    # trains, and writes the adapter to data/toy-headlines/adapter
 
 Scaffolding around the exercise rather than the exercise: your own LoRA is finetune/lora.py. The
-rows come from entropic, rendered as its eval will ask them, and entropic's `local-1.7b-toy`
+rows come from aigent, rendered as its eval will ask them, and aigent's `local-1.7b-toy`
 client serves the adapter this writes:
 
-    cd ../entropic
-    uv run python -m entropic.extraction.synthetic --out ../underhood/data/toy-headlines
+    cd ../aigent
+    uv run python -m aigent.extraction.synthetic --out ../underhood/data/toy-headlines
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     if not (args.data / "train.jsonl").exists():
         raise SystemExit(
-            f"no training rows in {args.data}; write them from entropic first:\n"
-            "  uv run python -m entropic.extraction.synthetic --out ../underhood/data/toy-headlines"
+            f"no training rows in {args.data}; write them from aigent first:\n"
+            "  uv run python -m aigent.extraction.synthetic --out ../underhood/data/toy-headlines"
         )
     mlx_lora.run(arguments(args.data, args.data / "adapter"))

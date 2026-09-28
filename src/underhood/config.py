@@ -60,7 +60,7 @@ LORA_TARGETS = ("q_proj", "v_proj")
 # DPO: how hard the loss holds the policy to its reference; smaller lets it drift further.
 DPO_BETA = 0.1
 
-# Toy fine-tune (mlx-lm) over entropic's template headlines. First guesses until a run prints its
+# Toy fine-tune (mlx-lm) over aigent's template headlines. First guesses until a run prints its
 # validation loss. The adapter takes LORA_RANK and LORA_ALPHA above, so it means what yours means.
 TOY_MODEL = "mlx-community/Qwen3-1.7B-4bit"
 TOY_ITERS = 200

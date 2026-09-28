@@ -5,7 +5,7 @@ reference implementation: your tokenizer against tiktoken, your attention agains
 GPT against its own loss curve and your LoRA against a before-and-after eval.
 
 The plan is in `~/workspace/MLAI/ML/llm-engineer-roadmap.md` (Track B). Weekly log is the one in the
-entropic repo.
+aigent repo.
 
 ## Setup
 

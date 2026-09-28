@@ -30,5 +30,5 @@ def test_only_the_answer_is_trained_on() -> None:
 
 
 def test_training_without_rows_says_where_they_come_from(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match="entropic.extraction.synthetic"):
+    with pytest.raises(SystemExit, match="aigent.extraction.synthetic"):
         main(["--data", str(tmp_path)])
