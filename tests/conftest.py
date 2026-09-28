@@ -24,6 +24,7 @@ DEPENDENCY_ORDER = (
     "tests/inference/test_quantization.py",
     "tests/finetune/test_lora.py",
     "tests/finetune/test_dpo.py",
+    "tests/finetune/test_toy.py",
 )
 
 
