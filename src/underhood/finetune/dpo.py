@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+import torch
+import torch.nn.functional as F
 from torch import Tensor
 
 from underhood import config
@@ -23,7 +25,8 @@ def sequence_logps(logits: Tensor, targets: Tensor, mask: Tensor) -> Tensor:
     The mask keeps the response and drops the prompt: what the model answered is scored, not what
     it was asked.
     """
-    raise NotImplementedError
+    logps = F.log_softmax(logits, dim=-1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)
+    return torch.where(mask, logps, 0.0).sum(dim=-1)
 
 
 class DpoLoss(NamedTuple):
@@ -46,4 +49,7 @@ def dpo_loss(
 
     All four are sequence_logps, (batch,). The rewards carry no gradient.
     """
-    raise NotImplementedError
+    chosen_drift = policy_chosen - reference_chosen
+    rejected_drift = policy_rejected - reference_rejected
+    loss = -F.logsigmoid(beta * (chosen_drift - rejected_drift)).mean()
+    return DpoLoss(loss, beta * chosen_drift.detach(), beta * rejected_drift.detach())

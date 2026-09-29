@@ -10,6 +10,9 @@ Reference: Hu et al. 2021, "LoRA: Low-Rank Adaptation of Large Language Models",
 
 from __future__ import annotations
 
+import math
+
+import torch
 from torch import Tensor, nn
 
 from underhood import config
@@ -32,18 +35,37 @@ class LoRALinear(nn.Module):
         self, base: nn.Linear, rank: int = config.LORA_RANK, alpha: float = config.LORA_ALPHA
     ) -> None:
         super().__init__()
-        raise NotImplementedError
+        self.base = base
+        self.base.requires_grad_(False)
+        weight = base.weight
+        self.lora_a = nn.Parameter(
+            nn.init.kaiming_uniform_(weight.new_empty(rank, base.in_features), a=math.sqrt(5))
+        )
+        self.lora_b = nn.Parameter(weight.new_zeros(base.out_features, rank))
+        self.scale = alpha / rank
 
     def forward(self, x: Tensor) -> Tensor:
         """x: (..., in_features) -> (..., out_features)."""
-        raise NotImplementedError
+        return self.base(x) + self.scale * (x @ self.lora_a.T @ self.lora_b.T)
 
     def merge(self) -> nn.Linear:
         """A new plain nn.Linear computing the same function, the update folded into its weight.
 
         This layer is left as it was.
         """
-        raise NotImplementedError
+        base = self.base
+        merged = nn.Linear(
+            base.in_features,
+            base.out_features,
+            bias=base.bias is not None,
+            device=base.weight.device,
+            dtype=base.weight.dtype,
+        )
+        with torch.no_grad():
+            merged.weight.copy_(base.weight + self.scale * self.lora_b @ self.lora_a)
+            if base.bias is not None:
+                merged.bias.copy_(base.bias)
+        return merged
 
 
 def apply_lora(
@@ -58,4 +80,19 @@ def apply_lora(
     Returns the dotted paths wrapped, in module order; a target that matches nothing is a
     ValueError naming it.
     """
-    raise NotImplementedError
+    model.requires_grad_(False)
+
+    wrapped: dict[str, nn.Linear] = {}
+    for path, module in model.named_modules():
+        if isinstance(module, nn.Linear) and path.rsplit(".", 1)[-1] in targets:
+            wrapped[path] = module
+
+    found = {path.rsplit(".", 1)[-1] for path in wrapped}
+    if missing := [target for target in targets if target not in found]:
+        raise ValueError(f"no nn.Linear under {', '.join(missing)}")
+
+    for path, module in wrapped.items():
+        parent, _, attribute = path.rpartition(".")
+        setattr(model.get_submodule(parent), attribute, LoRALinear(module, rank, alpha))
+
+    return list(wrapped)
