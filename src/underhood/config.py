@@ -70,3 +70,10 @@ TOY_BATCH_SIZE = 4
 TOY_LEARNING_RATE = 1e-4
 TOY_NUM_LAYERS = -1  # mlx-lm counts from the top; -1 adapts every layer, as apply_lora does
 TOY_STEPS_PER_EVAL = 50
+TOY_GRAD_CHECKPOINT = True  # recompute activations in the backward pass; same result, in 16 GB
+# Projection sets the toy run compares, keyed by adapter folder name; `qv` is apply_lora's.
+TOY_TARGET_SETS: dict[str, tuple[str, ...]] = {
+    "all": ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"),
+    "qv": LORA_TARGETS,
+}
+TOY_TARGET_SET = "qv"

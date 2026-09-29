@@ -23,12 +23,18 @@ def test_the_adapter_means_what_the_from_scratch_layer_means() -> None:
     assert lora["dropout"] == config.LORA_DROPOUT
 
 
-def test_the_adapter_sits_on_the_projections_apply_lora_wraps_in_every_layer() -> None:
-    """mlx's default adapts every linear in the last 16 blocks; apply_lora, the targets in all."""
-    settings = arguments()
+@pytest.mark.parametrize("target_set", sorted(config.TOY_TARGET_SETS))
+def test_the_adapter_sits_on_its_set_of_projections_in_every_layer(target_set: str) -> None:
+    """mlx's default adapts every linear in the last 16 blocks; these, the set's targets in all."""
+    settings = arguments(target_set=target_set)
     assert settings.num_layers == -1, "mlx reads -1 as every layer"
     keys = settings.lora_parameters["keys"]
-    assert [key.rsplit(".", 1)[-1] for key in keys] == list(config.LORA_TARGETS)
+    assert [key.rsplit(".", 1)[-1] for key in keys] == list(config.TOY_TARGET_SETS[target_set])
+    assert settings.adapter_path.endswith(f"adapter-{target_set}"), settings.adapter_path
+
+
+def test_the_default_set_is_the_one_apply_lora_wraps() -> None:
+    assert config.TOY_TARGET_SETS[config.TOY_TARGET_SET] == config.LORA_TARGETS
 
 
 def test_only_the_answer_is_trained_on() -> None:
