@@ -14,9 +14,13 @@ IN, OUT, RANK, ALPHA = 12, 10, 4, 8.0
 PROJECTIONS = ("q_proj", "v_proj")
 
 
-def _layer(bias: bool = True) -> LoRALinear:
+def _layer(
+    bias: bool = True, dtype: torch.dtype = torch.float32, dropout: float = 0.0
+) -> LoRALinear:
+    """Dropout off unless asked for, so the layer's arithmetic is exact."""
     torch.manual_seed(0)
-    return LoRALinear(nn.Linear(IN, OUT, bias=bias), rank=RANK, alpha=ALPHA)
+    base = nn.Linear(IN, OUT, bias=bias, dtype=dtype)
+    return LoRALinear(base, rank=RANK, alpha=ALPHA, dropout=dropout)
 
 
 def _trained(layer: LoRALinear) -> LoRALinear:
@@ -84,6 +88,41 @@ def test_the_merged_update_has_exactly_the_adapters_rank() -> None:
     layer = _trained(_layer())
     update = layer.merge().weight - layer.base.weight
     assert int(torch.linalg.matrix_rank(update.detach())) == RANK
+
+
+@pytest.mark.parametrize(
+    ("dtype", "atol"),
+    [
+        pytest.param(torch.float32, 1e-5, id="a float32 base"),
+        pytest.param(torch.bfloat16, 5e-2, id="a bfloat16 base, which bf16 adapters would stall"),
+    ],
+)
+def test_the_update_trains_in_float32_and_answers_in_the_bases_dtype(
+    dtype: torch.dtype, atol: float
+) -> None:
+    layer = _trained(_layer(dtype=dtype))
+    x = torch.randn(4, IN, dtype=dtype)
+
+    assert layer.lora_a.dtype == layer.lora_b.dtype == torch.float32
+    assert layer(x).dtype == dtype
+    merged = layer.merge()
+    assert merged.weight.dtype == dtype
+    assert torch.allclose(merged(x).float(), layer(x).float(), atol=atol)
+
+
+@pytest.mark.parametrize(
+    ("training", "updated"),
+    [
+        pytest.param(True, False, id="training drops the whole update at p=1"),
+        pytest.param(False, True, id="evaluating never drops"),
+    ],
+)
+def test_dropout_touches_only_the_updates_input_and_only_in_training(
+    training: bool, updated: bool
+) -> None:
+    layer = _trained(_layer(dropout=1.0)).train(training)
+    x = torch.randn(4, IN)
+    assert torch.equal(layer(x), layer.base(x)) is not updated
 
 
 def test_apply_lora_wraps_each_target_in_every_block(tiny_gpt: GPT, dims: TinyDims) -> None:

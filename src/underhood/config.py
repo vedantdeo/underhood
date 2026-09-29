@@ -52,9 +52,11 @@ QUANT_MAX_TOKENS = 256
 QUANT_PREFILL_LENGTHS = (128, 512, 2048)
 QUANT_REPEATS = 3
 
-# LoRA: the update's rank, its scale as alpha / rank, and the projections that get one.
+# LoRA: the update's rank, its scale as alpha / rank, the dropout on its input, and the
+# projections that get one.
 LORA_RANK = 8
 LORA_ALPHA = 16.0
+LORA_DROPOUT = 0.05
 LORA_TARGETS = ("q_proj", "v_proj")
 
 # DPO: how hard the loss holds the policy to its reference; smaller lets it drift further.
@@ -66,5 +68,5 @@ TOY_MODEL = "mlx-community/Qwen3-1.7B-4bit"
 TOY_ITERS = 200
 TOY_BATCH_SIZE = 4
 TOY_LEARNING_RATE = 1e-4
-TOY_NUM_LAYERS = 16  # the last layers that get adapters, counted from the top
+TOY_NUM_LAYERS = -1  # mlx-lm counts from the top; -1 adapts every layer, as apply_lora does
 TOY_STEPS_PER_EVAL = 50

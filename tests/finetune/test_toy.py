@@ -20,6 +20,15 @@ def test_the_adapter_means_what_the_from_scratch_layer_means() -> None:
     lora = arguments().lora_parameters
     assert lora["rank"] == config.LORA_RANK
     assert lora["scale"] == config.LORA_ALPHA / config.LORA_RANK
+    assert lora["dropout"] == config.LORA_DROPOUT
+
+
+def test_the_adapter_sits_on_the_projections_apply_lora_wraps_in_every_layer() -> None:
+    """mlx's default adapts every linear in the last 16 blocks; apply_lora, the targets in all."""
+    settings = arguments()
+    assert settings.num_layers == -1, "mlx reads -1 as every layer"
+    keys = settings.lora_parameters["keys"]
+    assert [key.rsplit(".", 1)[-1] for key in keys] == list(config.LORA_TARGETS)
 
 
 def test_only_the_answer_is_trained_on() -> None:

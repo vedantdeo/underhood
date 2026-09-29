@@ -19,10 +19,11 @@ from underhood import config
 
 
 class LoRALinear(nn.Module):
-    """`base(x) + scale * x @ A.T @ B.T`, where `base` is frozen and only A and B train.
+    """`base(x) + scale * dropout(x) @ A.T @ B.T`, where `base` is frozen and only A and B train.
 
     A is (rank, in_features) and starts random; B is (out_features, rank) and starts at zero, so
     until training moves B the layer computes exactly what `base` did. `scale` is alpha / rank.
+    A and B are float32 whatever the base's dtype; dropout touches only the update's input.
     Keep these attribute names; the tests read them.
     """
 
@@ -30,23 +31,32 @@ class LoRALinear(nn.Module):
     lora_a: nn.Parameter
     lora_b: nn.Parameter
     scale: float
+    dropout: nn.Dropout
 
     def __init__(
-        self, base: nn.Linear, rank: int = config.LORA_RANK, alpha: float = config.LORA_ALPHA
+        self,
+        base: nn.Linear,
+        rank: int = config.LORA_RANK,
+        alpha: float = config.LORA_ALPHA,
+        dropout: float = config.LORA_DROPOUT,
     ) -> None:
         super().__init__()
         self.base = base
         self.base.requires_grad_(False)
         weight = base.weight
         self.lora_a = nn.Parameter(
-            nn.init.kaiming_uniform_(weight.new_empty(rank, base.in_features), a=math.sqrt(5))
+            nn.init.kaiming_uniform_(
+                weight.new_empty(rank, base.in_features, dtype=torch.float32), a=math.sqrt(5)
+            )
         )
-        self.lora_b = nn.Parameter(weight.new_zeros(base.out_features, rank))
+        self.lora_b = nn.Parameter(weight.new_zeros(base.out_features, rank, dtype=torch.float32))
         self.scale = alpha / rank
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: Tensor) -> Tensor:
-        """x: (..., in_features) -> (..., out_features)."""
-        return self.base(x) + self.scale * (x @ self.lora_a.T @ self.lora_b.T)
+        """x: (..., in_features) -> (..., out_features), in x's dtype."""
+        update = self.dropout(x).to(self.lora_a.dtype) @ self.lora_a.T @ self.lora_b.T
+        return self.base(x) + (self.scale * update).to(x.dtype)
 
     def merge(self) -> nn.Linear:
         """A new plain nn.Linear computing the same function, the update folded into its weight.
@@ -62,7 +72,8 @@ class LoRALinear(nn.Module):
             dtype=base.weight.dtype,
         )
         with torch.no_grad():
-            merged.weight.copy_(base.weight + self.scale * self.lora_b @ self.lora_a)
+            folded = base.weight.float() + self.scale * self.lora_b @ self.lora_a
+            merged.weight.copy_(folded.to(base.weight.dtype))
             if base.bias is not None:
                 merged.bias.copy_(base.bias)
         return merged
@@ -73,6 +84,7 @@ def apply_lora(
     targets: tuple[str, ...] = config.LORA_TARGETS,
     rank: int = config.LORA_RANK,
     alpha: float = config.LORA_ALPHA,
+    dropout: float = config.LORA_DROPOUT,
 ) -> list[str]:
     """Freeze all of `model`, then wrap each nn.Linear held under a `targets` name in a LoRALinear.
 
@@ -93,6 +105,6 @@ def apply_lora(
 
     for path, module in wrapped.items():
         parent, _, attribute = path.rpartition(".")
-        setattr(model.get_submodule(parent), attribute, LoRALinear(module, rank, alpha))
+        setattr(model.get_submodule(parent), attribute, LoRALinear(module, rank, alpha, dropout))
 
     return list(wrapped)

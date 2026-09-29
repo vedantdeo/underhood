@@ -30,7 +30,7 @@ def arguments(data: Path = TOY_DIR, adapter: Path = TOY_DIR / "adapter") -> type
     """mlx_lm.lora's own defaults, with this run's settings laid over them.
 
     mlx's `scale` is the multiplier itself, where your layer's is alpha / rank, so it is passed as
-    that quotient: the same adapter under both names.
+    that quotient; its layers and keys are the ones `apply_lora` wraps: the same adapter.
     """
     settings = dict(mlx_lora.CONFIG_DEFAULTS)
     settings.update(
@@ -48,8 +48,10 @@ def arguments(data: Path = TOY_DIR, adapter: Path = TOY_DIR / "adapter") -> type
         seed=config.SEED,
         lora_parameters={
             "rank": config.LORA_RANK,
-            "dropout": 0.0,
+            "dropout": config.LORA_DROPOUT,
             "scale": config.LORA_ALPHA / config.LORA_RANK,
+            # Qwen3 holds its projections under `self_attn`; mlx matches keys within a block.
+            "keys": [f"self_attn.{target}" for target in config.LORA_TARGETS],
         },
     )
     return types.SimpleNamespace(**settings)
