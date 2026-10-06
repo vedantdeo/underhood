@@ -89,7 +89,12 @@ class MultiHeadAttention(nn.Module):
     """
 
     def __init__(
-        self, d_model: int, n_heads: int, causal: bool = True, dropout: float = 0.0
+        self,
+        d_model: int,
+        n_heads: int,
+        causal: bool = True,
+        dropout: float = 0.0,
+        bias: bool = False,
     ) -> None:
         super().__init__()
         if d_model % n_heads:
@@ -98,10 +103,10 @@ class MultiHeadAttention(nn.Module):
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
         self.causal = causal
-        self.q_proj = nn.Linear(d_model, d_model, bias=False)
-        self.k_proj = nn.Linear(d_model, d_model, bias=False)
-        self.v_proj = nn.Linear(d_model, d_model, bias=False)
-        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        self.q_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.k_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.v_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.out_proj = nn.Linear(d_model, d_model, bias=bias)
         self.attn_dropout = nn.Dropout(dropout)
         self.resid_dropout = nn.Dropout(dropout)
 

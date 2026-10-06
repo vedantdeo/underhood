@@ -12,6 +12,7 @@ Reference: nanoGPT's GPT.from_pretrained. Do not read reference/nanogpt_model.py
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from typing import cast
 
@@ -23,6 +24,29 @@ from transformers import GPT2Config, GPT2LMHeadModel
 from underhood import config
 from underhood.model.gpt import GPT
 
+# Hugging Face key -> yours, outside the blocks; embeddings and lm_head are already (out, in).
+_TOP_KEYS: dict[str, str] = {
+    "lm_head.weight": "lm_head.weight",
+    "transformer.ln_f.bias": "ln_f.bias",
+    "transformer.ln_f.weight": "ln_f.weight",
+    "transformer.wpe.weight": "pos_emb.weight",
+    "transformer.wte.weight": "tok_emb.weight",
+}
+
+# Inside block i: Hugging Face suffix -> (your suffix, whether it is a Conv1D weight to transpose).
+_BLOCK_KEYS: dict[str, tuple[str, bool]] = {
+    "attn.c_proj.bias": ("attn.out_proj.bias", False),
+    "attn.c_proj.weight": ("attn.out_proj.weight", True),
+    "ln_1.bias": ("ln1.bias", False),
+    "ln_1.weight": ("ln1.weight", False),
+    "ln_2.bias": ("ln2.bias", False),
+    "ln_2.weight": ("ln2.weight", False),
+    "mlp.c_fc.bias": ("ff.net.0.bias", False),
+    "mlp.c_fc.weight": ("ff.net.0.weight", True),
+    "mlp.c_proj.bias": ("ff.net.2.bias", False),
+    "mlp.c_proj.weight": ("ff.net.2.weight", True),
+}
+
 
 def gpt2_state_dict(hf_state: Mapping[str, Tensor]) -> dict[str, Tensor]:
     """Hugging Face's GPT2LMHeadModel state dict, renamed and reshaped into a GPT's.
@@ -33,7 +57,26 @@ def gpt2_state_dict(hf_state: Mapping[str, Tensor]) -> dict[str, Tensor]:
     as a separate tensor. Ignore any key that is not a weight or a bias. The result must load
     into a GPT built with bias=True and gelu_approximate="tanh" under strict=True.
     """
-    raise NotImplementedError
+    ours: dict[str, Tensor] = {}
+    for hf_key, hf_tensor in hf_state.items():
+        if hf_key in _TOP_KEYS:
+            ours[_TOP_KEYS[hf_key]] = hf_tensor
+            continue
+        match = re.fullmatch(r"transformer\.h\.(\d+)\.(.+)", hf_key)
+        if match is None:
+            continue
+        prefix, rest = f"blocks.{match[1]}.", match[2]
+        if rest in ("attn.c_attn.weight", "attn.c_attn.bias"):
+            kind = rest.rsplit(".", 1)[1]
+            fused = hf_tensor.T if kind == "weight" else hf_tensor  # (3 * d_model, ...) either way
+            for name, part in zip(
+                ("q_proj", "k_proj", "v_proj"), fused.chunk(3, dim=0), strict=True
+            ):
+                ours[f"{prefix}attn.{name}.{kind}"] = part.contiguous()
+        elif rest in _BLOCK_KEYS:
+            name, transpose = _BLOCK_KEYS[rest]
+            ours[prefix + name] = hf_tensor.T.contiguous() if transpose else hf_tensor
+    return ours
 
 
 def gpt_for(hf_config: GPT2Config) -> GPT:

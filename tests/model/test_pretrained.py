@@ -16,7 +16,7 @@ from transformers import GPT2Config, GPT2LMHeadModel
 
 from tests.conftest import TinyDims
 from underhood.model.attention import MultiHeadAttention
-from underhood.model.gpt import GPT, FeedForward
+from underhood.model.gpt import GPT, FeedForward, GeluApproximate
 from underhood.model.pretrained import gpt2_state_dict, gpt_for
 
 
@@ -76,7 +76,7 @@ def test_attention_projections_take_a_bias_switch(bias: dict[str, bool], has_bia
     ],
 )
 def test_feed_forward_takes_the_gelu_approximation(
-    approximate: str, kwargs: dict[str, str]
+    approximate: GeluApproximate, kwargs: dict[str, GeluApproximate]
 ) -> None:
     torch.manual_seed(0)
     ff = FeedForward(16, 0.0, **kwargs)

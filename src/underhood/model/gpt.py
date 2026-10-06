@@ -10,12 +10,14 @@ reference/nanogpt_model.py until yours passes; then read both and compare.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, cast
 
 from torch import Tensor, arange, nn
 
 from underhood import config
 from underhood.model.attention import KVCache, MultiHeadAttention
+
+GeluApproximate = Literal["none", "tanh"]  # the only values F.gelu accepts
 
 
 class FeedForward(nn.Module):
@@ -25,11 +27,13 @@ class FeedForward(nn.Module):
     as opposed to attention, which is where tokens look at each other.
     """
 
-    def __init__(self, d_model: int, dropout: float) -> None:
+    def __init__(
+        self, d_model: int, dropout: float, gelu_approximate: GeluApproximate = "none"
+    ) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(d_model, 4 * d_model),
-            nn.GELU(),
+            nn.GELU(approximate=gelu_approximate),
             nn.Linear(4 * d_model, d_model),
             nn.Dropout(dropout),
         )
@@ -52,12 +56,19 @@ class Block(nn.Module):
     ln2: nn.LayerNorm
     ff: FeedForward
 
-    def __init__(self, d_model: int, n_heads: int, dropout: float) -> None:
+    def __init__(
+        self,
+        d_model: int,
+        n_heads: int,
+        dropout: float,
+        bias: bool = False,
+        gelu_approximate: GeluApproximate = "none",
+    ) -> None:
         super().__init__()
         self.ln1 = nn.LayerNorm(d_model)
-        self.attn = MultiHeadAttention(d_model, n_heads, causal=True, dropout=dropout)
+        self.attn = MultiHeadAttention(d_model, n_heads, causal=True, dropout=dropout, bias=bias)
         self.ln2 = nn.LayerNorm(d_model)
-        self.ff = FeedForward(d_model, dropout)
+        self.ff = FeedForward(d_model, dropout, gelu_approximate=gelu_approximate)
 
     def forward(self, x: Tensor, cache: KVCache | None = None, layer: int = 0) -> Tensor:
         """x + attn(ln1(x)), then that + ff(ln2(x)). Shape in, same shape out.
@@ -94,13 +105,17 @@ class GPT(nn.Module):
         n_heads: int = config.N_HEADS,
         n_layers: int = config.N_LAYERS,
         dropout: float = config.DROPOUT,
+        bias: bool = False,
+        gelu_approximate: GeluApproximate = "none",
     ) -> None:
         super().__init__()
         self.block_size = block_size
         self.tok_emb = nn.Embedding(vocab_size, d_model)
         self.pos_emb = nn.Embedding(block_size, d_model)
         self.drop = nn.Dropout(dropout)
-        self.blocks = nn.ModuleList(Block(d_model, n_heads, dropout) for _ in range(n_layers))
+        self.blocks = nn.ModuleList(
+            Block(d_model, n_heads, dropout, bias, gelu_approximate) for _ in range(n_layers)
+        )
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
