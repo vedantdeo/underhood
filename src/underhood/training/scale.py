@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from torch import Tensor
 from underhood import config, data
 from underhood.device import pick_device
 from underhood.model.gpt import GPT
+from underhood.training import loop
 from underhood.training.loop import Snapshot
 
 GPU_DIR = data.DATA_DIR / "gpu"
@@ -57,7 +59,12 @@ def lr_at(iteration: int, max_iters: int, warmup_iters: int, max_lr: float, min_
     warmup step. After, a half cosine from max_lr at warmup_iters down to min_lr at max_iters,
     and min_lr from then on.
     """
-    raise NotImplementedError
+    if iteration < warmup_iters:
+        return max_lr * (iteration + 1) / warmup_iters
+    if iteration >= max_iters:
+        return min_lr
+    progress = (iteration - warmup_iters) / (max_iters - warmup_iters)
+    return min_lr + (max_lr - min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype | None:
@@ -66,7 +73,7 @@ def autocast_dtype(device: torch.device) -> torch.dtype | None:
     bfloat16 has float32's range, so unlike float16 it needs no GradScaler; every A100 and later
     has it. MPS autocast exists but buys little for a model this size, so the MPS run stays fp32.
     """
-    raise NotImplementedError
+    return torch.bfloat16 if device.type == "cuda" else None
 
 
 def autocast(device: torch.device, dtype: torch.dtype | None) -> AbstractContextManager[object]:
@@ -75,7 +82,9 @@ def autocast(device: torch.device, dtype: torch.dtype | None) -> AbstractContext
     Autocast changes what the forward pass computes in, not what the weights are stored in: the
     parameters, and so their gradients, stay float32.
     """
-    raise NotImplementedError
+    if dtype is None:
+        return nullcontext()
+    return torch.autocast(device.type, dtype=dtype)
 
 
 def accumulate_step(
@@ -92,7 +101,21 @@ def accumulate_step(
     Clip the total gradient norm to grad_clip when one is given, then step. Raise ValueError on
     no micro-batches.
     """
-    raise NotImplementedError
+    if not micro_batches:
+        raise ValueError("accumulate_step needs at least one micro-batch")
+    device = next(model.parameters()).device
+    optimizer.zero_grad(set_to_none=True)
+    total = torch.zeros((), device=device)
+    for x, y in micro_batches:
+        with autocast(device, dtype):  # the forward only; backward reuses each op's dtype
+            _, loss = model(x, y)
+        assert loss is not None
+        (loss / len(micro_batches)).backward()
+        total += loss.detach().float()
+    if grad_clip is not None:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+    optimizer.step()
+    return total.item() / len(micro_batches)  # one GPU sync per step, not one per micro-batch
 
 
 def save_checkpoint(
@@ -110,7 +133,18 @@ def save_checkpoint(
     temporary file beside path and rename it over path, so a crash mid-write never leaves a
     half-written checkpoint where the last good one was.
     """
-    raise NotImplementedError
+    temporary = path.with_name(path.name + ".tmp")
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "iteration": iteration,
+            "history": [tuple(row) for row in history],  # plain tuples, so weights_only can load
+            "generator": generator.get_state(),
+        },
+        temporary,
+    )
+    temporary.replace(path)
 
 
 def load_checkpoint(
@@ -120,7 +154,11 @@ def load_checkpoint(
 
     Return the number of steps already taken and the curve so far, as Snapshots.
     """
-    raise NotImplementedError
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    model.load_state_dict(state["model"])
+    optimizer.load_state_dict(state["optimizer"])  # moments land on the parameters' device
+    generator.set_state(state["generator"])
+    return int(state["iteration"]), [Snapshot(*row) for row in state["history"]]
 
 
 def train_run(
@@ -144,7 +182,43 @@ def train_run(
     passing each new row to on_eval. Save to checkpoint, when given, after every
     checkpoint_interval-th step and once more at the end.
     """
-    raise NotImplementedError
+    model.to(device)  # before loading, so the optimizer's moments land beside the parameters
+    iteration, history = 0, []
+    if checkpoint is not None and checkpoint.exists():
+        iteration, history = load_checkpoint(checkpoint, model, optimizer, generator)
+        if iteration >= run.max_iters:
+            return history
+    splits = {"train": train_data, "val": val_data}
+
+    def record(at: int) -> None:
+        with autocast(device, run.dtype):
+            losses = loop.estimate_loss(
+                model, splits, device, run.micro_batch, run.eval_iters, generator
+            )
+        row = Snapshot(at, losses["train"], losses["val"])
+        history.append(row)
+        if on_eval is not None:
+            on_eval(row)
+
+    for step in range(iteration, run.max_iters):
+        if step % run.eval_interval == 0:
+            record(step)
+        lr = lr_at(step, run.max_iters, run.warmup_iters, run.max_lr, run.min_lr)
+        for group in optimizer.param_groups:
+            group["lr"] = lr
+        micro_batches = [
+            loop.get_batch(train_data, model.block_size, run.micro_batch, device, generator)
+            for _ in range(run.accum_steps)
+        ]
+        accumulate_step(model, optimizer, micro_batches, run.grad_clip, run.dtype)
+        done = step + 1
+        if checkpoint is not None and done % run.checkpoint_interval == 0 and done < run.max_iters:
+            save_checkpoint(checkpoint, model, optimizer, done, history, generator)
+
+    record(run.max_iters)
+    if checkpoint is not None:
+        save_checkpoint(checkpoint, model, optimizer, run.max_iters, history, generator)
+    return history
 
 
 def load_tokens(path: Path) -> Tensor:
