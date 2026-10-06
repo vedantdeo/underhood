@@ -1359,6 +1359,7 @@ dependencies = [
     { name = "numpy" },
     { name = "tiktoken" },
     { name = "torch" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -1376,6 +1377,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "tiktoken", specifier = ">=0.14.0" },
     { name = "torch", specifier = ">=2.14.0" },
+    { name = "transformers", specifier = ">=5.17.0" },
 ]
 
 [package.metadata.requires-dev]

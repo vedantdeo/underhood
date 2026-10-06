@@ -64,19 +64,31 @@ the only place the weeks appear.
 | 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions; the same tokens with a cache and without |
 | 3 | `inference/quantization.py` | bf16 against 8-, 6- and 4-bit conversions of the same checkpoint: TTFT, decode rate, memory | KL divergence from bf16's next-token distributions; the side-by-side outputs |
 | 4 | `finetune/lora.py`, `finetune/dpo.py` | LoRA layer; DPO loss | toy fine-tune eval; gradient check |
-| 5 | cloud GPU day | a 10 to 30M GPT on a rented A100 | loss curve vs the MPS run |
+| 5 | `model/pretrained.py` | GPT-2's bias and tanh-GELU switches; its weights renamed into yours | Hugging Face's logits and loss; greedy text via `underhood-gpt2-check` |
+| 5 | `training/scale.py` | warmup-cosine lr, bf16 autocast, gradient accumulation, resumable checkpoints, the run | one big batch; a crashed run resumed; loss curve on an A100 vs MPS |
 
 Rules for this repo: write the implementation before reading the reference code, then read it and
 compare. Keep the tests as the spec; add a test before you extend an interface.
+
+## GPU day runbook
+
+Once `tests/training/test_scale.py` is green, and only after the rental is approved:
+
+1. Locally, `uv run underhood-train-gpu --max-iters 3 --micro-batch 8 --name mps` for MPS's ms/iter
+   on the same model (it needs `uv run underhood-fetch-tinystories` first, about 2.2 GB down).
+2. Rent one A100 (RunPod or Lambda) with a PyTorch image; clone this repo, `uv sync`.
+3. `uv run underhood-fetch-tinystories`, then `uv run underhood-train-gpu` inside `tmux`.
+   A preempted or killed run carries on from `data/gpu/tinystories/ckpt.pt` when started again.
+4. Copy back `data/gpu/tinystories/` (curve, settings, checkpoint), then stop the instance.
 
 ## Layout
 
 - `src/underhood/config.py`     every tunable constant, in one place
 - `src/underhood/device.py`     device selection and the matmul check
-- `src/underhood/data.py`       corpus download
+- `src/underhood/data.py`       corpus download, and TinyStories as GPT-2 token ids
 - `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
-- `src/underhood/model/`        attention, the KV cache, and the GPT that stacks them
-- `src/underhood/training/`     batching and the training loop
+- `src/underhood/model/`        attention, the KV cache, the GPT that stacks them, and GPT-2's weights in it
+- `src/underhood/training/`     batching, the training loop, and the GPU-scale run
 - `src/underhood/inference/`    sampling, the benchmark that prices the KV cache, and quantization
 - `src/underhood/finetune/`     LoRA, the DPO loss, and the mlx-lm toy fine-tune
 - `tests/`                      the specification, one file per module, run in dependency order

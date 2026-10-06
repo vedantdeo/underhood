@@ -13,13 +13,17 @@ dependencies = [
     "numpy>=2.5.3",
     "tiktoken>=0.14.0",
     "torch>=2.14.0",
+    "transformers>=5.17.0",
 ]
 
 [project.scripts]
 underhood-check = "underhood.device:main"
 underhood-fetch = "underhood.data:main"
+underhood-fetch-tinystories = "underhood.data:tinystories_main"
 underhood-bpe-compare = "underhood.tokenizer.compare:main"
 underhood-train = "underhood.training.loop:main"
+underhood-train-gpu = "underhood.training.scale:main"
+underhood-gpt2-check = "underhood.model.pretrained:main"
 underhood-sample = "underhood.inference.sampling:main"
 underhood-kv-bench = "underhood.inference.benchmark:main"
 underhood-quant-bench = "underhood.inference.quantization:main"

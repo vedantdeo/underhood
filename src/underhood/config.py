@@ -77,3 +77,34 @@ TOY_TARGET_SETS: dict[str, tuple[str, ...]] = {
     "qv": LORA_TARGETS,
 }
 TOY_TARGET_SET = "qv"
+
+# GPT-2 small, loaded into your own GPT to prove the architecture matches Hugging Face's.
+GPT2_MODEL = "openai-community/gpt2"
+GPT2_CHECK_PROMPT = "The quick brown fox jumps over the lazy dog, and then"
+GPT2_CHECK_TOKENS = 20
+
+# GPU run: TinyStories through GPT-2's tokenizer on a rented A100. First guesses until a run
+# prints its ms/iter; one step is GPU_MICRO_BATCH * GPU_ACCUM_STEPS * GPU_BLOCK_SIZE tokens.
+GPU_DATASET = "roneneldan/TinyStories"
+GPU_TRAIN_FILE = "TinyStoriesV2-GPT4-train.txt"
+GPU_VAL_FILE = "TinyStoriesV2-GPT4-valid.txt"
+GPU_TOKENIZER = "gpt2"
+GPU_BLOCK_SIZE = 256
+GPU_D_MODEL = 384
+GPU_N_HEADS = 6
+GPU_N_LAYERS = 6
+GPU_DROPOUT = 0.0
+GPU_EMBED_INIT_STD = 0.02  # GPT-2's; the default of 1 gives a tied head logits in the hundreds
+GPU_MICRO_BATCH = 64
+GPU_ACCUM_STEPS = 8
+GPU_MAX_ITERS = 5000
+GPU_WARMUP_ITERS = 200
+GPU_MAX_LR = 6e-4
+GPU_MIN_LR = 6e-5
+GPU_WEIGHT_DECAY = 0.1
+GPU_BETAS = (0.9, 0.95)
+GPU_GRAD_CLIP = 1.0
+GPU_EVAL_INTERVAL = 250
+GPU_EVAL_ITERS = 50
+GPU_CHECKPOINT_INTERVAL = 500
+GPU_COMPILE = True
