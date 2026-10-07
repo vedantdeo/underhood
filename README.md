@@ -78,8 +78,9 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 
 Once `tests/training/test_scale.py` is green, and only after the rental is approved:
 
-0. Locally, `uv run underhood-train-gpu --estimate`: minutes and dollars on an A100 from
-   `config.GPU_USD_PER_HOUR` and a guessed MFU (`underhood.gpu.pricing`), nothing fetched or trained. Bring that number to
+0. Locally, `uv run underhood-train-gpu --estimate`: minutes on an A100 at a guessed MFU and what
+   each offer in `config.GPU_OFFERS` charges for them with GST (`underhood.gpu.pricing`), nothing
+   fetched or trained. The default is Jarvis spot; pick another with `--gpu`. Bring the number to
    the rental's go-ahead.
 1. Locally, `uv run underhood-train-gpu --max-iters 3 --micro-batch 8 --name mps` for MPS's ms/iter
    on the same model (it needs `uv run underhood-fetch-tinystories` first, about 2.2 GB down).
@@ -103,6 +104,9 @@ Twice a week both repos branch `main` and promote the branch a day later, all ti
 - **A fix during the window** lands on `main` first, then is cherry-picked onto the snap branch
   (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`).
 - `.github/workflows/release.yml` does it; run a step by hand from the Actions tab.
+- Two CI pipelines run the same checks (`checks.yml`): the **mains CI** (`main.yml`) on `main`,
+  which once green starts aigent's mains CI against this `main`; and the **roll CI** (`roll.yml`)
+  on each snap branch, which a roll requires green.
 - `roll-…` and `stable` are tags on snap branches, not branches of their own.
 - aigent follows: its `main` points at underhood's latest snap branch, re-pointed at each snap.
 

@@ -30,7 +30,7 @@ from torch import Tensor
 
 from underhood import config, data
 from underhood.device import pick_device
-from underhood.gpu.pricing import estimated_seconds, rental_usd
+from underhood.gpu.pricing import estimated_seconds, hourly_usd, rental_usd
 from underhood.model.gpt import GPT
 from underhood.training import loop
 from underhood.training.loop import Snapshot
@@ -261,17 +261,23 @@ def _optimizer(model: GPT, device: torch.device) -> torch.optim.AdamW:
     )
 
 
-def _estimate(model: GPT, max_iters: int) -> str:
-    """The run's compute time and rental cost on an A100, from the config's rate and guessed MFU."""
+def _estimate(model: GPT, max_iters: int, chosen: str) -> str:
+    """The run's A100 compute time at the guessed MFU, and what each offer charges for it with tax,
+    cheapest first, `chosen` marked."""
     params = sum(p.numel() for p in model.parameters())
     tokens = max_iters * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
     seconds = estimated_seconds(params, tokens, config.GPU_PEAK_FLOPS, config.GPU_MFU)
-    usd = rental_usd(seconds, config.GPU_USD_PER_HOUR)
-    return (
+    hourly = {
+        offer: hourly_usd(offer, config.GPU_OFFERS, config.GPU_TAX) for offer in config.GPU_OFFERS
+    }
+    lines = [
         f"{params:,} params, {tokens:,} tokens: about {seconds / 60:,.0f} min of A100 compute at "
-        f"{config.GPU_MFU:.0%} MFU, ${usd:.2f} at ${config.GPU_USD_PER_HOUR:.2f}/hr, "
-        "before setup and the download"
-    )
+        f"{config.GPU_MFU:.0%} MFU, before setup and the download; with {config.GPU_TAX:.0%} tax:"
+    ]
+    for offer, rate in sorted(hourly.items(), key=lambda item: item[1]):
+        mark = "  <- --gpu" if offer == chosen else ""
+        lines.append(f"  ${rental_usd(seconds, rate):.2f}  ${rate:.2f}/hr  {offer}{mark}")
+    return "\n".join(lines)
 
 
 def main() -> None:
@@ -285,11 +291,16 @@ def main() -> None:
         help="smaller on MPS; accumulation rises to keep the tokens a step",
     )
     parser.add_argument(
-        "--estimate", action="store_true", help="print the A100 time and cost, then stop"
+        "--gpu", default=config.GPU_OFFER, choices=sorted(config.GPU_OFFERS), help="the rental"
+    )
+    parser.add_argument(
+        "--estimate",
+        action="store_true",
+        help="print the A100 time and each offer's cost, then stop",
     )
     args = parser.parse_args()
     if args.estimate:
-        print(_estimate(_model(), args.max_iters))
+        print(_estimate(_model(), args.max_iters, args.gpu))
         return
 
     torch.manual_seed(config.SEED)
@@ -348,8 +359,10 @@ def main() -> None:
         )
     if device.type == "cuda":
         session = time.perf_counter() - started
-        spent = rental_usd(session, config.GPU_USD_PER_HOUR)
-        print(f"this session: {session / 60:,.1f} min, ${spent:.2f}")
+        rate = hourly_usd(args.gpu, config.GPU_OFFERS, config.GPU_TAX)
+        print(
+            f"this session: {session / 60:,.1f} min, ${rental_usd(session, rate):.2f} on {args.gpu}"
+        )
     settings = {k: str(v) for k, v in asdict(run).items()}
     (out / "run.json").write_text(json.dumps({"device": str(device), **settings}, indent=2) + "\n")
     print(f"curve: {curve}\ncheckpoint: {out / 'ckpt.pt'}")

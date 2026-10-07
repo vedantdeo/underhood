@@ -109,7 +109,15 @@ GPU_EVAL_ITERS = 50
 GPU_CHECKPOINT_INTERVAL = 500
 GPU_COMPILE = True
 
-# Renting the A100: RunPod Community Cloud's A100 80GB on demand, priced 2026-10-07.
-GPU_USD_PER_HOUR = 1.19
+# Renting an A100: each offer's listed $/hr before tax, priced 2026-10-07, sorted by name.
+GPU_OFFERS: dict[str, float] = {
+    "jarvis-a100-80gb-ondemand": 1.49,
+    "jarvis-a100-80gb-spot": 0.89,  # interruptible; the run resumes from its last checkpoint
+    "lambda-a100-40gb": 1.99,
+    "runpod-community-a100-80gb": 1.19,
+    "runpod-secure-a100-80gb": 1.59,
+}
+GPU_OFFER = "jarvis-a100-80gb-spot"
+GPU_TAX = 0.18  # GST, which India levies on each of these
 GPU_PEAK_FLOPS = 312e12  # dense bf16
 GPU_MFU = 0.3  # share of the peak a 30M model reaches; a guess until a run prints its ms/iter

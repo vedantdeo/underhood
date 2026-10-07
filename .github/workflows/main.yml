@@ -1,0 +1,28 @@
+# The mains CI: underhood's main, then, once green, aigent's main against it.
+name: mains
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: mains-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mains:
+    uses: ./.github/workflows/checks.yml
+
+  # AIGENT_DISPATCH_TOKEN: fine-grained, aigent only, Actions read and write, so it starts runs only.
+  aigent:
+    name: start aigent's mains CI
+    needs: mains
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run aigent's main against this main
+        env:
+          GH_TOKEN: ${{ secrets.AIGENT_DISPATCH_TOKEN }}
+        run: gh workflow run main.yml --repo vedantdeo/aigent --ref main

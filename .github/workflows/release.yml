@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
   checks: read
 
 concurrency:
@@ -54,9 +55,11 @@ jobs:
         if: steps.plan.outputs.step == 'snap'
         env:
           DATE: ${{ steps.plan.outputs.date }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           sha=$(git rev-parse origin/main)
           git push -f origin "$sha:refs/heads/snap-$DATE"
+          gh workflow run roll.yml --ref "snap-$DATE"
           echo "snapped main at $sha as snap-$DATE"
           git ls-remote --heads origin 'snap-*' | sed 's|.*refs/heads/||' | sort | head -n "-$KEEP" |
             while read -r old; do git push origin --delete "$old"; echo "pruned $old"; done
@@ -70,10 +73,10 @@ jobs:
           snap=$(git ls-remote --heads origin 'snap-*' | sed 's|.*refs/heads/||' | sort | tail -n 1)
           sha=$(git ls-remote origin "refs/heads/$snap" | cut -f1)
           ci=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs" --jq \
-            '[.check_runs[] | select(.name == "lint · types · tests")]
+            '[.check_runs[] | select(.name == "snap / lint · types · tests")]
              | sort_by(.completed_at) | last | .conclusion // "missing"')
           if [ "$ci" != success ]; then
-            echo "::error::CI on $snap's head $sha is $ci; nothing rolls"
+            echo "::error::roll CI on $snap's head $sha is $ci; nothing rolls"
             exit 1
           fi
           git tag -f "roll-$DATE" "$sha"

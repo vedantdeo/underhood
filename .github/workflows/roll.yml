@@ -1,0 +1,16 @@
+# The roll CI: a snap branch, which a roll requires green.
+name: roll
+
+on:
+  push:
+    branches: ["snap-*"]
+  # The release job starts this by hand: a push made with the job's own token starts nothing.
+  workflow_dispatch:
+
+concurrency:
+  group: roll-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snap:
+    uses: ./.github/workflows/checks.yml

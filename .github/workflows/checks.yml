@@ -1,15 +1,8 @@
-# Lint, types and the spec on every push to main or a snap branch, so a roll can require it green.
+# Lint, types and the spec, shared by the mains CI (main.yml) and the roll CI (roll.yml).
 name: checks
 
 on:
-  push:
-    branches: [main, "snap-*"]
-  pull_request:
-  workflow_dispatch:
-
-concurrency:
-  group: checks-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
   quality:

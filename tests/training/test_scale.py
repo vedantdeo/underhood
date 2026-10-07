@@ -374,18 +374,38 @@ def test_a_token_file_loads_as_int64_ids(tmp_path: Path) -> None:
     assert tokens.tolist() == ids
 
 
-def test_estimate_prices_the_run_without_fetching_or_training(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("flags", "chosen"),
+    [
+        pytest.param([], config.GPU_OFFER, id="the default offer"),
+        pytest.param(
+            ["--gpu", "runpod-community-a100-80gb"], "runpod-community-a100-80gb", id="one picked"
+        ),
+    ],
+)
+def test_estimate_prices_every_offer_without_fetching_or_training(
+    flags: list[str],
+    chosen: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     def no_download() -> tuple[Path, Path]:
         raise AssertionError("an estimate must not fetch TinyStories")
 
     monkeypatch.setattr(data, "gpt2_vocab_size", lambda: GPT2_VOCAB)
     monkeypatch.setattr(data, "tinystories", no_download)
-    monkeypatch.setattr("sys.argv", ["underhood-train-gpu", "--estimate", "--max-iters", "100"])
+    argv = ["underhood-train-gpu", "--estimate", "--max-iters", "100", *flags]
+    monkeypatch.setattr("sys.argv", argv)
 
     scale.main()
 
-    out = capsys.readouterr().out
+    header, *rows = capsys.readouterr().out.strip().splitlines()
     tokens = 100 * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
-    assert f"{tokens:,} tokens" in out and f"${config.GPU_USD_PER_HOUR:.2f}/hr" in out, out
+    assert f"{tokens:,} tokens" in header and f"{config.GPU_TAX:.0%} tax" in header, header
+    named = [row.split()[2] for row in rows]
+    assert sorted(named) == sorted(config.GPU_OFFERS), "a row per offer"
+    costs = [float(row.split()[0].lstrip("$")) for row in rows]
+    assert costs == sorted(costs), "cheapest first"
+    assert [row for row in rows if row.endswith("<- --gpu")] == [r for r in rows if chosen in r]
+    rate = config.GPU_OFFERS[chosen] * (1 + config.GPU_TAX)
+    assert f"${rate:.2f}/hr  {chosen}" in "\n".join(rows)
