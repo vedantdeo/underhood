@@ -1,9 +1,9 @@
-# Lint, types and the spec on every push to main or snap, so a roll can require a green snap.
+# Lint, types and the spec on every push to main or a snap branch, so a roll can require it green.
 name: checks
 
 on:
   push:
-    branches: [main, snap]
+    branches: [main, "snap-*"]
   pull_request:
   workflow_dispatch:
 

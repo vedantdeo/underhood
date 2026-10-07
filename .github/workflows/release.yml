@@ -1,5 +1,5 @@
-# Snap and roll, twice a week, in IST. A snap points `snap` at main and tags it snap-DATE; a roll,
-# if CI passed on snap's head, points `stable` there and tags it roll-DATE. aigent waits on these.
+# Snap and roll, twice a week, in IST. A snap branches main as snap-DATE and keeps the last eight;
+# a roll, if CI passed there, tags the latest snap's head roll-DATE and moves `stable` to it.
 name: snap and roll
 
 on:
@@ -23,6 +23,9 @@ permissions:
 concurrency:
   group: release
   cancel-in-progress: false
+
+env:
+  KEEP: 8 # snap branches kept: a month of them
 
 jobs:
   release:
@@ -53,10 +56,10 @@ jobs:
           DATE: ${{ steps.plan.outputs.date }}
         run: |
           sha=$(git rev-parse origin/main)
-          git push -f origin "$sha:refs/heads/snap"
-          git tag -f "snap-$DATE" "$sha"
-          git push -f origin "refs/tags/snap-$DATE"
+          git push -f origin "$sha:refs/heads/snap-$DATE"
           echo "snapped main at $sha as snap-$DATE"
+          git ls-remote --heads origin 'snap-*' | sed 's|.*refs/heads/||' | sort | head -n "-$KEEP" |
+            while read -r old; do git push origin --delete "$old"; echo "pruned $old"; done
 
       - name: Roll
         if: steps.plan.outputs.step == 'roll'
@@ -64,15 +67,16 @@ jobs:
           DATE: ${{ steps.plan.outputs.date }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$(git rev-parse origin/snap)
+          snap=$(git ls-remote --heads origin 'snap-*' | sed 's|.*refs/heads/||' | sort | tail -n 1)
+          sha=$(git ls-remote origin "refs/heads/$snap" | cut -f1)
           ci=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs" --jq \
             '[.check_runs[] | select(.name == "lint · types · tests")]
              | sort_by(.completed_at) | last | .conclusion // "missing"')
           if [ "$ci" != success ]; then
-            echo "::error::CI on snap's head $sha is $ci; stable stays where it was"
+            echo "::error::CI on $snap's head $sha is $ci; nothing rolls"
             exit 1
           fi
-          git push -f origin "$sha:refs/heads/stable"
           git tag -f "roll-$DATE" "$sha"
-          git push -f origin "refs/tags/roll-$DATE"
-          echo "rolled $sha to stable as roll-$DATE"
+          git tag -f stable "$sha"
+          git push -f origin "refs/tags/roll-$DATE" refs/tags/stable
+          echo "rolled $snap at $sha as roll-$DATE, now stable"

@@ -90,22 +90,21 @@ Once `tests/training/test_scale.py` is green, and only after the rental is appro
 
 ## Snap and roll
 
-Twice a week both repos cut a snapshot of `main` and promote it a day later, all times IST:
+Twice a week both repos branch `main` and promote the branch a day later, all times IST:
 
 | | Snap | Roll |
 |---|---|---|
 | first half | Mon 00:00 (Sun night) | Tue 00:00 (Mon night) |
 | second half | Thu 00:00 (Wed night) | Fri 00:00 (Thu night) |
 
-- **Snap** points the `snap` branch at `main` and tags it `snap-YYYY-MM-DD`.
-- **Roll** points `stable` at `snap`'s head and tags it `roll-YYYY-MM-DD`, only if CI passed on that
-  commit; otherwise it skips and the run goes red.
-- **A fix during the window** lands on `main` first, then is cherry-picked onto `snap`
-  (`git checkout snap && git cherry-pick <sha> && git push origin snap`). A fix only on `snap` is
-  lost at the next snap, which resets it to `main`.
-- `.github/workflows/release.yml` does it; run a step by hand from the Actions tab (`snap`, `roll`).
-
-- aigent waits on these tags and rolls in step: it pins underhood to each snap and each roll.
+- **Snap** creates the branch `snap-YYYY-MM-DD` from `main`, and keeps the last eight (a month).
+- **Roll** tags the latest snap branch's head `roll-YYYY-MM-DD` and moves the `stable` tag to it,
+  only if CI passed on that commit; otherwise nothing moves and the run goes red.
+- **A fix during the window** lands on `main` first, then is cherry-picked onto the snap branch
+  (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`).
+- `.github/workflows/release.yml` does it; run a step by hand from the Actions tab.
+- aigent follows: its `main` points at underhood's snap branch during the window and at `stable`
+  otherwise.
 
 ## Layout
 
