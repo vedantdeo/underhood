@@ -3,11 +3,13 @@ checkpoint a preempted run can resume from exactly.
 
 The tests in tests/training/test_scale.py are the specification, in this order: lr_at,
 autocast_dtype, autocast, accumulate_step, save_checkpoint and load_checkpoint, then train_run.
-main() is already written: TinyStories in, a loss curve, ms/iter and a checkpoint out.
+main() is already written: TinyStories in, a loss curve, ms/iter and a checkpoint out, and with
+--estimate what the run would cost before renting anything (underhood.gpu.pricing).
 
 uv run underhood-fetch-tinystories   # once: download and encode, about 1 GB of uint16 ids
 uv run underhood-train-gpu           # on the rented A100
 uv run underhood-train-gpu --max-iters 20   # the same model on MPS, for the ms/iter comparison
+uv run underhood-train-gpu --estimate       # minutes and dollars on an A100, nothing trained
 
 Reference: nanoGPT's train.py. Do not read reference/ until yours passes.
 """
@@ -28,6 +30,7 @@ from torch import Tensor
 
 from underhood import config, data
 from underhood.device import pick_device
+from underhood.gpu.pricing import estimated_seconds, rental_usd
 from underhood.model.gpt import GPT
 from underhood.training import loop
 from underhood.training.loop import Snapshot
@@ -258,6 +261,19 @@ def _optimizer(model: GPT, device: torch.device) -> torch.optim.AdamW:
     )
 
 
+def _estimate(model: GPT, max_iters: int) -> str:
+    """The run's compute time and rental cost on an A100, from the config's rate and guessed MFU."""
+    params = sum(p.numel() for p in model.parameters())
+    tokens = max_iters * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
+    seconds = estimated_seconds(params, tokens, config.GPU_PEAK_FLOPS, config.GPU_MFU)
+    usd = rental_usd(seconds, config.GPU_USD_PER_HOUR)
+    return (
+        f"{params:,} params, {tokens:,} tokens: about {seconds / 60:,.0f} min of A100 compute at "
+        f"{config.GPU_MFU:.0%} MFU, ${usd:.2f} at ${config.GPU_USD_PER_HOUR:.2f}/hr, "
+        "before setup and the download"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train the GPU-sized GPT on TinyStories.")
     parser.add_argument("--max-iters", type=int, default=config.GPU_MAX_ITERS)
@@ -268,7 +284,13 @@ def main() -> None:
         default=config.GPU_MICRO_BATCH,
         help="smaller on MPS; accumulation rises to keep the tokens a step",
     )
+    parser.add_argument(
+        "--estimate", action="store_true", help="print the A100 time and cost, then stop"
+    )
     args = parser.parse_args()
+    if args.estimate:
+        print(_estimate(_model(), args.max_iters))
+        return
 
     torch.manual_seed(config.SEED)
     device = pick_device()
@@ -324,6 +346,10 @@ def main() -> None:
             f"\n{last - first} steps in {t1 - t0:,.1f}s: {per_step * 1000:,.1f} ms/iter, "
             f"{tokens_per_step / per_step:,.0f} tokens/s, evaluation included"
         )
+    if device.type == "cuda":
+        session = time.perf_counter() - started
+        spent = rental_usd(session, config.GPU_USD_PER_HOUR)
+        print(f"this session: {session / 60:,.1f} min, ${spent:.2f}")
     settings = {k: str(v) for k, v in asdict(run).items()}
     (out / "run.json").write_text(json.dumps({"device": str(device), **settings}, indent=2) + "\n")
     print(f"curve: {curve}\ncheckpoint: {out / 'ckpt.pt'}")

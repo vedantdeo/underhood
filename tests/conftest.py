@@ -21,6 +21,8 @@ DEPENDENCY_ORDER = (
     "tests/model/test_gpt.py",
     "tests/model/test_pretrained.py",
     "tests/training/test_loop.py",
+    "tests/gpu/test_pricing.py",
+    "tests/gpu/test_boundary.py",
     "tests/training/test_scale.py",
     "tests/inference/test_sampling.py",
     "tests/inference/test_benchmark.py",

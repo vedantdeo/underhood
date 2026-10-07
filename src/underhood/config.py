@@ -108,3 +108,8 @@ GPU_EVAL_INTERVAL = 250
 GPU_EVAL_ITERS = 50
 GPU_CHECKPOINT_INTERVAL = 500
 GPU_COMPILE = True
+
+# Renting the A100: RunPod Community Cloud's A100 80GB on demand, priced 2026-10-07.
+GPU_USD_PER_HOUR = 1.19
+GPU_PEAK_FLOPS = 312e12  # dense bf16
+GPU_MFU = 0.3  # share of the peak a 30M model reaches; a guess until a run prints its ms/iter

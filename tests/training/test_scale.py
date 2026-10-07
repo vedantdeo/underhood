@@ -372,3 +372,20 @@ def test_a_token_file_loads_as_int64_ids(tmp_path: Path) -> None:
 
     assert tokens.dtype == torch.int64
     assert tokens.tolist() == ids
+
+
+def test_estimate_prices_the_run_without_fetching_or_training(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def no_download() -> tuple[Path, Path]:
+        raise AssertionError("an estimate must not fetch TinyStories")
+
+    monkeypatch.setattr(data, "gpt2_vocab_size", lambda: GPT2_VOCAB)
+    monkeypatch.setattr(data, "tinystories", no_download)
+    monkeypatch.setattr("sys.argv", ["underhood-train-gpu", "--estimate", "--max-iters", "100"])
+
+    scale.main()
+
+    out = capsys.readouterr().out
+    tokens = 100 * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
+    assert f"{tokens:,} tokens" in out and f"${config.GPU_USD_PER_HOUR:.2f}/hr" in out, out

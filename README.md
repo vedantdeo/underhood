@@ -74,6 +74,9 @@ compare. Keep the tests as the spec; add a test before you extend an interface.
 
 Once `tests/training/test_scale.py` is green, and only after the rental is approved:
 
+0. Locally, `uv run underhood-train-gpu --estimate`: minutes and dollars on an A100 from
+   `config.GPU_USD_PER_HOUR` and a guessed MFU (`underhood.gpu.pricing`), nothing fetched or trained. Bring that number to
+   the rental's go-ahead.
 1. Locally, `uv run underhood-train-gpu --max-iters 3 --micro-batch 8 --name mps` for MPS's ms/iter
    on the same model (it needs `uv run underhood-fetch-tinystories` first, about 2.2 GB down).
 2. Rent one A100 (RunPod or Lambda) with a PyTorch image; clone this repo, `uv sync`.
@@ -85,6 +88,7 @@ Once `tests/training/test_scale.py` is green, and only after the rental is appro
 
 - `src/underhood/config.py`     every tunable constant, in one place
 - `src/underhood/device.py`     device selection and the matmul check
+- `src/underhood/gpu/`         renting a GPU and what it costs; imports no torch, so a caller can price a run without loading it
 - `src/underhood/data.py`       corpus download, and TinyStories as GPT-2 token ids
 - `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
 - `src/underhood/model/`        attention, the KV cache, the GPT that stacks them, and GPT-2's weights in it
