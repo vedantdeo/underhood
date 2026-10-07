@@ -16,6 +16,10 @@ uv run underhood-fetch      # downloads tiny Shakespeare into data/ (git-ignored
 uv run ptw . -x -q          # the working loop: stops on the next function to write
 ```
 
+`uv sync` installs the `train` and `mlx` groups (torch, transformers, mlx-lm and the rest) by
+default. The package itself depends on nothing, so another project, such as aigent, can install it
+for `config` and `gpu/` alone and never pull in torch.
+
 The specs run in dependency order, not alphabetically, so `-x` always stops on the next thing to
 write rather than on whichever file sorts first. That order lives in `tests/conftest.py`.
 

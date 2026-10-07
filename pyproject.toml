@@ -7,14 +7,10 @@ authors = [
     { name = "vedantdeo", email = "vedantdeo1@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = [
-    "huggingface-hub>=1.32.0",
-    "mlx-lm>=0.31.3",
-    "numpy>=2.5.3",
-    "tiktoken>=0.14.0",
-    "torch>=2.14.0",
-    "transformers>=5.17.0",
-]
+# None: config and gpu/ need only the standard library, so a consumer such as aigent can price a run
+# without installing torch. What the models need is in the train and mlx groups, which every
+# `uv sync` here installs by default and no consumer ever does.
+dependencies = []
 
 [project.scripts]
 underhood-check = "underhood.device:main"
@@ -40,6 +36,19 @@ dev = [
     "pytest-watcher>=0.6.3",
     "ruff>=0.16.6",
 ]
+mlx = [
+    "mlx-lm>=0.31.3; sys_platform == 'darwin'",
+]
+train = [
+    "huggingface-hub>=1.32.0",
+    "numpy>=2.5.3",
+    "tiktoken>=0.14.0",
+    "torch>=2.14.0",
+    "transformers>=5.17.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "mlx", "train"]
 
 [tool.ruff]
 line-length = 100
