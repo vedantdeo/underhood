@@ -11,11 +11,14 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import cast
 
-import mlx.core as mx
 import pytest
-from mlx_lm.tokenizer_utils import TokenizerWrapper
 
-from underhood.inference.quantization import (
+pytest.importorskip("mlx")  # Mac-only; CI runs on Linux
+
+import mlx.core as mx  # noqa: E402
+from mlx_lm.tokenizer_utils import TokenizerWrapper  # noqa: E402
+
+from underhood.inference.quantization import (  # noqa: E402
     PROMPTS,
     chat_tokens,
     first_divergence,

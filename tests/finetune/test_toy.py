@@ -5,10 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from mlx_lm import lora as mlx_lora
 
-from underhood import config
-from underhood.finetune.toy import arguments, main
+pytest.importorskip("mlx_lm")  # Mac-only; CI runs on Linux
+
+from mlx_lm import lora as mlx_lora  # noqa: E402
+
+from underhood import config  # noqa: E402
+from underhood.finetune.toy import arguments, main  # noqa: E402
 
 
 def test_every_setting_mlx_lm_reads_is_present() -> None:

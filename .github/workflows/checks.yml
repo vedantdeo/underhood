@@ -1,0 +1,46 @@
+# Lint, types and the spec on every push to main or snap, so a roll can require a green snap.
+name: checks
+
+on:
+  push:
+    branches: [main, snap]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: lint · types · tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      # mlx-lm is Mac-only, so on Linux the mlx group installs nothing and its two tests skip.
+      - name: Install the locked environment
+        run: uv sync --locked
+
+      - name: ruff · lint
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff · format
+        if: ${{ !cancelled() }}
+        run: uv run ruff format --check .
+
+      # The two mlx modules cannot resolve mlx on Linux; the Mac checks them.
+      - name: pyright
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run pyright $(git ls-files 'src/*.py' 'tests/*.py'
+          | grep -v -e 'finetune/toy.py' -e 'inference/quantization.py'
+          -e 'test_toy.py' -e 'test_quantization.py')
+
+      - name: pytest
+        if: ${{ !cancelled() }}
+        run: uv run pytest -q

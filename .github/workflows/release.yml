@@ -1,0 +1,78 @@
+# Snap and roll, twice a week, in IST. A snap points `snap` at main and tags it snap-DATE; a roll,
+# if CI passed on snap's head, points `stable` there and tags it roll-DATE. aigent waits on these.
+name: snap and roll
+
+on:
+  schedule:
+    - cron: "30 18 * * 0" # snap, Mon 00:00 IST
+    - cron: "30 18 * * 1" # roll, Tue 00:00 IST
+    - cron: "30 18 * * 3" # snap, Thu 00:00 IST
+    - cron: "30 18 * * 4" # roll, Fri 00:00 IST
+  workflow_dispatch:
+    inputs:
+      step:
+        description: which step to run now
+        type: choice
+        options: [snap, roll]
+        required: true
+
+permissions:
+  contents: write
+  checks: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: snap or roll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Decide the step and the date
+        id: plan
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          CHOSEN: ${{ inputs.step }}
+        run: |
+          case "$SCHEDULE" in
+            "30 18 * * 0"|"30 18 * * 3") step=snap ;;
+            "30 18 * * 1"|"30 18 * * 4") step=roll ;;
+            *) step="$CHOSEN" ;;
+          esac
+          echo "step=$step" >> "$GITHUB_OUTPUT"
+          echo "date=$(TZ=Asia/Kolkata date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Snap
+        if: steps.plan.outputs.step == 'snap'
+        env:
+          DATE: ${{ steps.plan.outputs.date }}
+        run: |
+          sha=$(git rev-parse origin/main)
+          git push -f origin "$sha:refs/heads/snap"
+          git tag -f "snap-$DATE" "$sha"
+          git push -f origin "refs/tags/snap-$DATE"
+          echo "snapped main at $sha as snap-$DATE"
+
+      - name: Roll
+        if: steps.plan.outputs.step == 'roll'
+        env:
+          DATE: ${{ steps.plan.outputs.date }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse origin/snap)
+          ci=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs" --jq \
+            '[.check_runs[] | select(.name == "lint · types · tests")]
+             | sort_by(.completed_at) | last | .conclusion // "missing"')
+          if [ "$ci" != success ]; then
+            echo "::error::CI on snap's head $sha is $ci; stable stays where it was"
+            exit 1
+          fi
+          git push -f origin "$sha:refs/heads/stable"
+          git tag -f "roll-$DATE" "$sha"
+          git push -f origin "refs/tags/roll-$DATE"
+          echo "rolled $sha to stable as roll-$DATE"
