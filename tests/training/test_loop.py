@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import torch
 
+import underhood.training.loop as loop
 from tests.conftest import GptFactory, TinyDims
+from underhood import config, data
 from underhood.training.loop import estimate_loss, get_batch, split_data, train
 
 CPU = torch.device("cpu")
@@ -131,3 +135,30 @@ def test_train_drives_the_loss_down_on_a_learnable_corpus(
     )
     first, last = history[0].train_loss, history[-1].train_loss
     assert last < first - 0.5, f"loss went {first:.3f} -> {last:.3f}; the loop is not learning"
+
+
+def test_the_encoded_corpus_is_cached_and_rebuilt_when_the_vocab_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text = tmp_path / "shakespeare.txt"
+    text.write_text("to be or not to be, that is the question\n" * 20, encoding="utf-8")
+    monkeypatch.setattr(data, "tiny_shakespeare", lambda: text)
+    monkeypatch.setattr(loop, "ENCODED", tmp_path / "bpe.pt")
+    monkeypatch.setattr(config, "VOCAB_SIZE", 262)
+    trained: list[int] = []
+    train_bpe = loop.BPETokenizer.train
+
+    def counting(self: loop.BPETokenizer, corpus: str, vocab_size: int) -> None:
+        trained.append(vocab_size)
+        train_bpe(self, corpus, vocab_size)
+
+    monkeypatch.setattr(loop.BPETokenizer, "train", counting)
+
+    tokenizer, ids = loop._encoded_corpus()
+    again, cached_ids = loop._encoded_corpus()
+    monkeypatch.setattr(config, "VOCAB_SIZE", 264)
+    loop._encoded_corpus()
+
+    assert tokenizer.decode(ids) == text.read_text(encoding="utf-8")
+    assert (cached_ids, again.merges) == (ids, tokenizer.merges), "the second call read the cache"
+    assert trained == [262, 264], "trained once, then again only for a new vocabulary size"

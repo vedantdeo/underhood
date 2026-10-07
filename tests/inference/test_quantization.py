@@ -9,12 +9,15 @@ import json
 import math
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import cast
 
 import mlx.core as mx
 import pytest
+from mlx_lm.tokenizer_utils import TokenizerWrapper
 
 from underhood.inference.quantization import (
     PROMPTS,
+    chat_tokens,
     first_divergence,
     kl_divergence,
     load_prompts,
@@ -143,3 +146,40 @@ def test_first_divergence(a: list[int], b: list[int], expected: int | None) -> N
 )
 def test_variant_dir(repo: str, bits: int, name: str, tmp_path: Path) -> None:
     assert variant_dir(repo, bits, tmp_path) == tmp_path / name
+
+
+class _Tokenizer:
+    """A chat template and an encoder, recording whether it was asked to add special tokens."""
+
+    def __init__(self, bos_token: str | None, template: str) -> None:
+        self.bos_token, self.template = bos_token, template
+        self.added: list[bool] = []
+
+    def apply_chat_template(
+        self, messages: list[dict[str, str]], tokenize: bool, add_generation_prompt: bool
+    ) -> str:
+        assert not tokenize and add_generation_prompt
+        return self.template.format(messages[0]["content"])
+
+    def encode(self, text: str, add_special_tokens: bool) -> list[int]:
+        self.added.append(add_special_tokens)
+        return [ord(c) for c in text]
+
+
+@pytest.mark.parametrize(
+    ("bos", "template", "adds"),
+    [
+        pytest.param(
+            "<s>", "<s>[INST] {} [/INST]", False, id="the template already starts with BOS"
+        ),
+        pytest.param("<s>", "[INST] {} [/INST]", True, id="the template leaves BOS out"),
+        pytest.param(None, "<|user|>{}", True, id="a tokenizer with no BOS at all"),
+    ],
+)
+def test_chat_tokens_adds_bos_exactly_once(bos: str | None, template: str, adds: bool) -> None:
+    tokenizer = _Tokenizer(bos, template)
+
+    ids = chat_tokens(cast(TokenizerWrapper, tokenizer), "hi")
+
+    assert tokenizer.added == [adds]
+    assert ids == [ord(c) for c in template.format("hi")]

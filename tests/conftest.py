@@ -16,6 +16,7 @@ from underhood.model.gpt import GPT
 # thing to write. Do not sort this; tests/test_spec_order.py checks it stays complete.
 DEPENDENCY_ORDER = (
     "tests/tokenizer/test_bpe.py",
+    "tests/test_data.py",
     "tests/model/test_attention.py",
     "tests/model/test_gpt.py",
     "tests/model/test_pretrained.py",

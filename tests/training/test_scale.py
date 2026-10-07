@@ -7,12 +7,14 @@ import math
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from torch import Tensor
 
 import underhood.training.scale as scale
 from tests.conftest import GptFactory, TinyDims
+from underhood import config, data
 from underhood.model.gpt import GPT
 from underhood.training.loop import Snapshot
 from underhood.training.scale import (
@@ -321,3 +323,52 @@ def test_relaunching_a_finished_run_changes_nothing(
     _, _, again, seen = _run(make_gpt, stream, path)
     assert again == first, "a finished run was evaluated again"
     assert seen == []
+
+
+# --- the GPU run's model, optimizer and data ----------------------------------------------------
+
+GPT2_VOCAB = 50257
+
+
+@pytest.fixture
+def gpu_model(monkeypatch: pytest.MonkeyPatch) -> GPT:
+    monkeypatch.setattr(data, "gpt2_vocab_size", lambda: GPT2_VOCAB)  # tiktoken may download
+    torch.manual_seed(0)
+    return scale._model()
+
+
+def test_the_gpu_model_ties_its_head_to_the_embedding(gpu_model: GPT) -> None:
+    assert gpu_model.lm_head.weight is gpu_model.tok_emb.weight, "one tensor, trained once"
+    params = sum(p.numel() for p in gpu_model.parameters())
+    untied = params + GPT2_VOCAB * config.GPU_D_MODEL
+    assert 29e6 < params < 31e6 and 48e6 < untied < 50e6, f"{params:,} tied, {untied:,} untied"
+
+
+def test_the_gpu_model_starts_its_embedding_at_gpt2s_scale(gpu_model: GPT) -> None:
+    std = gpu_model.tok_emb.weight.std().item()
+    assert abs(std - config.GPU_EMBED_INIT_STD) < 0.1 * config.GPU_EMBED_INIT_STD, std
+
+
+def test_the_optimizer_decays_the_matrices_and_nothing_else(make_gpt: GptFactory) -> None:
+    model = make_gpt()
+    optimizer = scale._optimizer(model, CPU)
+
+    decayed, kept = optimizer.param_groups
+    matrices = {id(p) for p in model.parameters() if p.dim() >= 2}
+    assert {id(p) for p in decayed["params"]} == matrices
+    assert {id(p) for p in kept["params"]} == {id(p) for p in model.parameters()} - matrices
+    assert kept["params"], "biases and LayerNorm gains exist, and are kept out of the decay"
+    assert (decayed["weight_decay"], kept["weight_decay"]) == (config.GPU_WEIGHT_DECAY, 0.0)
+    assert (decayed["lr"], decayed["betas"]) == (config.GPU_MAX_LR, config.GPU_BETAS)
+    assert not decayed["fused"], "fused AdamW is CUDA-only"
+
+
+def test_a_token_file_loads_as_int64_ids(tmp_path: Path) -> None:
+    ids = [0, 1, 40000, GPT2_VOCAB - 1]  # past 32,767, where a signed 16-bit read goes negative
+    path = tmp_path / "train.bin"
+    np.asarray(ids, dtype=np.uint16).tofile(path)
+
+    tokens = scale.load_tokens(path)
+
+    assert tokens.dtype == torch.int64
+    assert tokens.tolist() == ids

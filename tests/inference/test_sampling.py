@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import torch
 
+import underhood.inference.sampling as sampling
 from tests.conftest import GptFactory, TinyDims
 from underhood.inference.sampling import (
     apply_temperature,
@@ -182,3 +185,39 @@ def test_without_a_cache_every_step_re_reads_the_context(
     monkeypatch.setattr(tiny_gpt, "forward", counting)
     generate(tiny_gpt, torch.randint(0, dims.vocab_size, (1, 4)), 3, top_k=1, top_p=None)
     assert widths == [4, 5, 6], "the uncached path grows its context by one every step"
+
+
+def test_a_checkpoint_loads_back_as_the_model_and_tokenizer_that_wrote_it(
+    make_gpt: GptFactory, dims: TinyDims, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "gpt.pt"
+    monkeypatch.setattr(sampling, "CHECKPOINT", path)
+    model = make_gpt()
+    merges, vocab = {(104, 105): 256}, {i: bytes([i]) for i in range(256)} | {256: b"hi"}
+    torch.save(
+        {
+            "block_size": dims.block_size,
+            "merges": merges,
+            "model": model.state_dict(),
+            "vocab": vocab,
+            "vocab_size": dims.vocab_size,
+        },
+        path,
+    )
+    monkeypatch.setattr(sampling, "GPT", lambda **kw: type(model)(**{**dims._asdict(), **kw}))
+
+    tokenizer, loaded = sampling._load(torch.device("cpu"))
+
+    assert (tokenizer.merges, tokenizer.vocab) == (merges, vocab)
+    assert not loaded.training, "loaded for inference"
+    for name, tensor in model.state_dict().items():
+        assert torch.equal(loaded.state_dict()[name], tensor), name
+
+
+def test_loading_without_a_checkpoint_says_how_to_make_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sampling, "CHECKPOINT", tmp_path / "missing.pt")
+
+    with pytest.raises(FileNotFoundError, match="underhood-train"):
+        sampling._load(torch.device("cpu"))
