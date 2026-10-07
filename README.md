@@ -103,8 +103,8 @@ Twice a week both repos branch `main` and promote the branch a day later, all ti
 - **A fix during the window** lands on `main` first, then is cherry-picked onto the snap branch
   (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`).
 - `.github/workflows/release.yml` does it; run a step by hand from the Actions tab.
-- aigent follows: its `main` points at underhood's snap branch during the window and at `stable`
-  otherwise.
+- `roll-…` and `stable` are tags on snap branches, not branches of their own.
+- aigent follows: its `main` points at underhood's latest snap branch, re-pointed at each snap.
 
 ## Layout
 
