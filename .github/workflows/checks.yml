@@ -1,8 +1,18 @@
-# Lint, types and the spec, shared by the mains CI (main.yml) and the roll CI (roll.yml).
+# Lint, types and the spec: the mains CI (main.yml) here, and aigent's release, which calls it with
+# a token that can read this private repo.
 name: checks
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: the commit to check, instead of the one that started the run
+        type: string
+        default: ""
+    secrets:
+      token:
+        description: a token that can read underhood, for a caller in another repo
+        required: false
 
 jobs:
   quality:
@@ -10,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          repository: vedantdeo/underhood # a called workflow would otherwise check out its caller
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.token || github.token }}
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v10.1.0
         with:

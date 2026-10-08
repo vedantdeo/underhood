@@ -91,24 +91,22 @@ Once `tests/training/test_scale.py` is green, and only after the rental is appro
 
 ## Snap and roll
 
-Twice a week both repos branch `main` and promote the branch a day later, all times IST:
+underhood is released together with aigent, by aigent's `.github/workflows/release.yml`, all or
+nothing. Twice a week, at Mon and Thu 00:07 IST (Sun and Wed 18:37 UTC; an odd minute, since
+GitHub runs schedules late at busy ones):
 
-| | Snap | Roll |
-|---|---|---|
-| first half | Mon 00:00 (Sun night) | Tue 00:00 (Mon night) |
-| second half | Thu 00:00 (Wed night) | Fri 00:00 (Thu night) |
-
-- **Snap** creates the branch `snap-YYYY-MM-DD` from `main`, and keeps the last eight (a month).
-- **Roll** tags the latest snap branch's head `roll-YYYY-MM-DD` and moves the `stable` tag to it,
-  only if CI passed on that commit; otherwise nothing moves and the run goes red.
-- **A fix during the window** lands on `main` first, then is cherry-picked onto the snap branch
-  (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`).
-- `.github/workflows/release.yml` does it; run a step by hand from the Actions tab.
-- Two CI pipelines run the same checks (`checks.yml`): the **mains CI** (`main.yml`) on `main`,
-  which once green starts aigent's mains CI against this `main`; and the **roll CI** (`roll.yml`)
-  on each snap branch, which a roll requires green.
+- **snap** creates the branch `snap-YYYY-MM-DD` from `main` here, then aigent's, pinned to it. Each
+  repo keeps its last eight (a month).
+- **roll** runs this repo's `checks.yml` on its snap, and aigent's checks on its own.
+- **stable**, only if both pass, tags each snap `roll-YYYY-MM-DD`, dated the day it rolls, and
+  moves each repo's `stable` tag to it. If either fails, nothing moves in either repo.
+- **A fix after a red roll** lands on `main` first, then is cherry-picked onto the snap branch
+  (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`); then run aigent's release by
+  hand with step `repin`, which re-pins aigent's snap to it and rolls the pair again.
+- The **mains CI** (`main.yml`) runs `checks.yml` on `main`, and once green starts aigent's mains CI
+  against this `main`; aigent's `main` pins this `main` and, once green, locks the commit it passed
+  with. `checks.yml` checks out this repo by name, so aigent's release can call it.
 - `roll-…` and `stable` are tags on snap branches, not branches of their own.
-- aigent follows: its `main` points at underhood's latest snap branch, re-pointed at each snap.
 
 ## Layout
 
