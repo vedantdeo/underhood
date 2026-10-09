@@ -12,19 +12,20 @@ from underhood.gpu import kaggle_job
 
 REPO_URL, SHA = "https://github.com/someone/underhood.git", "0123abc"
 COMMAND, KEEP = "uv run underhood-train-gpu --name t4", "data/gpu/t4"
+ENV = ("HF_TOKEN", "PYTHONUNBUFFERED", "UV_NO_SYNC")
 
 
 class Shell:
-    """Records each command and its PYTHONUNBUFFERED, and fails the one matching `failing`."""
+    """Records each command and the job's variables as it ran; fails the one matching `failing`."""
 
     def __init__(self, failing: str | None = None, code: int = 3) -> None:
         self.ran: list[str] = []
-        self.unbuffered: list[str | None] = []
+        self.env: list[dict[str, str | None]] = []
         self.failing, self.code = failing, code
 
     def __call__(self, command: str) -> int:
         self.ran.append(command)
-        self.unbuffered.append(os.environ.get("PYTHONUNBUFFERED"))
+        self.env.append({name: os.environ.get(name) for name in ENV})
         return self.code if self.failing is not None and self.failing in command else 0
 
     def index(self, fragment: str) -> int:
@@ -34,7 +35,7 @@ class Shell:
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """The job writes to os.environ; start each test without its variables and restore after."""
-    for name in ("HF_TOKEN", "PYTHONUNBUFFERED"):
+    for name in ENV:
         monkeypatch.setenv(name, "")  # delenv alone records nothing for an unset variable
         monkeypatch.delenv(name)
 
@@ -74,15 +75,20 @@ def test_a_job_checks_out_the_commit_runs_it_and_keeps_the_folder(
         assert "HF_TOKEN" not in os.environ
 
 
-def test_every_step_prints_as_it_goes() -> None:
-    """Into Kaggle's pipe, Python would otherwise hold a run's prints back until it ends."""
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("PYTHONUNBUFFERED", id="prints reach Kaggle's log as they happen"),
+        pytest.param("UV_NO_SYNC", id="uv run keeps the train group setup installed"),
+    ],
+)
+def test_every_step_runs_with(name: str) -> None:
     shell = Shell()
 
     _main(shell, None)
 
-    assert shell.unbuffered == ["1"] * len(shell.ran), list(
-        zip(shell.ran, shell.unbuffered, strict=True)
-    )
+    seen = [env[name] for env in shell.env]
+    assert seen == ["1"] * len(shell.ran), list(zip(shell.ran, seen, strict=True))
 
 
 @pytest.mark.parametrize(
@@ -107,16 +113,22 @@ def test_a_job_exits_with_the_code_of_the_step_that_failed(
 
 
 @pytest.mark.parametrize(
-    ("module", "token"),
+    ("module", "token", "said"),
     [
-        pytest.param(None, None, id="off Kaggle there is no secrets client"),
-        pytest.param("hf_secret", "hf_secret", id="on Kaggle the secret is read"),
-        pytest.param("", None, id="an empty secret counts as none"),
-        pytest.param(KeyError("HF_TOKEN"), None, id="a secret never added counts as none"),
+        pytest.param(None, None, "ModuleNotFoundError", id="off Kaggle there is no secrets client"),
+        pytest.param("hf_secret", "hf_secret", "", id="on Kaggle the secret is read, quietly"),
+        pytest.param("", None, "empty", id="an empty secret counts as none"),
+        pytest.param(
+            KeyError("not attached"), None, "KeyError: 'not attached'", id="a secret not attached"
+        ),
     ],
 )
 def test_hf_token(
-    module: str | Exception | None, token: str | None, monkeypatch: pytest.MonkeyPatch
+    module: str | Exception | None,
+    token: str | None,
+    said: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     if module is None:
         monkeypatch.setitem(sys.modules, "kaggle_secrets", None)  # import raises ImportError
@@ -134,3 +146,5 @@ def test_hf_token(
         monkeypatch.setitem(sys.modules, "kaggle_secrets", fake)
 
     assert kaggle_job.hf_token() == token
+    out = capsys.readouterr().out
+    assert (said in out) if said else out == "", f"the log says {out!r}, not why there is no token"

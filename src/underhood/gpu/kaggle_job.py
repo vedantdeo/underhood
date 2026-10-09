@@ -18,12 +18,16 @@ WORKING = Path("/kaggle/working")
 
 
 def hf_token() -> str | None:
-    """The HF_TOKEN secret from Kaggle's secrets client; None off Kaggle or if never added."""
+    """The HF_TOKEN secret from Kaggle's secrets client; None, printing why, when there is none."""
     try:
         secret = import_module("kaggle_secrets").UserSecretsClient().get_secret("HF_TOKEN")
-    except Exception:  # the client raises its own errors for a secret not attached to the kernel
+    except Exception as missing:  # the client raises its own errors for a secret not attached
+        print(f"no HF_TOKEN secret, so no Hub ({type(missing).__name__}: {missing})", flush=True)
         return None
-    return secret if isinstance(secret, str) and secret else None
+    if not (isinstance(secret, str) and secret):
+        print("the HF_TOKEN secret is empty, so no Hub", flush=True)
+        return None
+    return secret
 
 
 def _shell(command: str) -> int:
@@ -42,6 +46,7 @@ def main(
     """Set up, pull keep from the Hub, run command, then push keep and copy it to WORKING even if
     the command failed. Exit with the code of the step that failed."""
     os.environ["PYTHONUNBUFFERED"] = "1"  # into Kaggle's pipe, prints otherwise wait for the end
+    os.environ["UV_NO_SYNC"] = "1"  # uv run would add the default groups to setup's train group
     token = secret()
     if token is not None:
         os.environ["HF_TOKEN"] = token
