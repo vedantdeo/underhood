@@ -41,6 +41,7 @@ def main(
 ) -> None:
     """Set up, pull keep from the Hub, run command, then push keep and copy it to WORKING even if
     the command failed. Exit with the code of the step that failed."""
+    os.environ["PYTHONUNBUFFERED"] = "1"  # into Kaggle's pipe, prints otherwise wait for the end
     token = secret()
     if token is not None:
         os.environ["HF_TOKEN"] = token

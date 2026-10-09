@@ -15,18 +15,28 @@ COMMAND, KEEP = "uv run underhood-train-gpu --name t4", "data/gpu/t4"
 
 
 class Shell:
-    """Records each command and answers with the exit code of the first rule it matches."""
+    """Records each command and its PYTHONUNBUFFERED, and fails the one matching `failing`."""
 
     def __init__(self, failing: str | None = None, code: int = 3) -> None:
         self.ran: list[str] = []
+        self.unbuffered: list[str | None] = []
         self.failing, self.code = failing, code
 
     def __call__(self, command: str) -> int:
         self.ran.append(command)
+        self.unbuffered.append(os.environ.get("PYTHONUNBUFFERED"))
         return self.code if self.failing is not None and self.failing in command else 0
 
     def index(self, fragment: str) -> int:
         return next(i for i, command in enumerate(self.ran) if fragment in command)
+
+
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The job writes to os.environ; start each test without its variables and restore after."""
+    for name in ("HF_TOKEN", "PYTHONUNBUFFERED"):
+        monkeypatch.setenv(name, "")  # delenv alone records nothing for an unset variable
+        monkeypatch.delenv(name)
 
 
 def _main(shell: Shell, token: str | None) -> None:
@@ -43,7 +53,6 @@ def _main(shell: Shell, token: str | None) -> None:
 def test_a_job_checks_out_the_commit_runs_it_and_keeps_the_folder(
     token: str | None, hub: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("HF_TOKEN", raising=False)
     shell = Shell()
 
     _main(shell, token)
@@ -65,6 +74,17 @@ def test_a_job_checks_out_the_commit_runs_it_and_keeps_the_folder(
         assert "HF_TOKEN" not in os.environ
 
 
+def test_every_step_prints_as_it_goes() -> None:
+    """Into Kaggle's pipe, Python would otherwise hold a run's prints back until it ends."""
+    shell = Shell()
+
+    _main(shell, None)
+
+    assert shell.unbuffered == ["1"] * len(shell.ran), list(
+        zip(shell.ran, shell.unbuffered, strict=True)
+    )
+
+
 @pytest.mark.parametrize(
     ("failing", "ran_command", "kept"),
     [
@@ -75,7 +95,6 @@ def test_a_job_checks_out_the_commit_runs_it_and_keeps_the_folder(
 def test_a_job_exits_with_the_code_of_the_step_that_failed(
     failing: str, ran_command: bool, kept: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("HF_TOKEN", raising=False)
     shell = Shell(failing=failing, code=3)
 
     with pytest.raises(SystemExit) as exited:
