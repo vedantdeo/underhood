@@ -111,16 +111,17 @@ GPU_COMPILE = True
 
 # Renting an A100: each offer's listed $/hr before tax, priced 2026-10-07, sorted by name.
 GPU_OFFERS: dict[str, float] = {
+    "jarvis-a100-40gb-ondemand": 0.89,  # added 2026-10-09: the first run's card, ₹84.24/hr with GST
     "jarvis-a100-80gb-ondemand": 1.49,
     "jarvis-a100-80gb-spot": 0.89,  # interruptible; the run resumes from its last checkpoint
     "lambda-a100-40gb": 1.99,
     "runpod-community-a100-80gb": 1.19,
     "runpod-secure-a100-80gb": 1.59,
 }
-GPU_OFFER = "jarvis-a100-80gb-spot"
+GPU_OFFER = "jarvis-a100-40gb-ondemand"
 GPU_TAX = 0.18  # GST, which India levies on each of these
 GPU_PEAK_FLOPS = 312e12  # dense bf16
-GPU_MFU = 0.3  # share of the peak a 30M model reaches; a guess until a run prints its ms/iter
+GPU_MFU = 0.25  # share of the peak a 30M model reached on 2026-10-09: 306.6 ms/iter, evals included
 
 # Loss-curve plots (training.curves). Categorical slots in assignment order, which is the data: do
 # not sort. A ninth run is refused rather than given a generated hue.
