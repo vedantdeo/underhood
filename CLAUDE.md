@@ -1,7 +1,7 @@
 # underhood — notes for Claude
 
 Project rules live here rather than in a session's private memory, so they travel with the repo
-and reach anyone who clones it. The section below is a verbatim mirror of a global preference in
+and reach anyone who clones it. The section on tests is a verbatim mirror of a global preference in
 `~/.claude/CLAUDE.md`, which is machine-local and backed up by nothing; this copy is the durable one.
 
 **In this repo**, the tests are the spec and come first: they are written red, ordered by
@@ -33,3 +33,18 @@ rename. A bug fix is not a feature either, but it brings the test that would hav
 
 This section is mirrored verbatim into each project's tracked `CLAUDE.md`, so it survives the loss
 of this machine. Edit both, or neither.
+
+## `main` only takes pull requests
+
+Since 2026-10-09 this repo and aigent are public, and `main` in each is guarded by a ruleset, "main
+via PR": no direct push, no force push, no deletion, and `mains / lint · types · tests` passes before
+a merge. No approval is required, because GitHub never lets an author approve their own PR: Vedant's
+merge is the approval. Nobody bypasses the ruleset. aigent's `CLAUDE.md` holds the full rule.
+
+**How to apply:** "push" means push a branch and open a PR with `gh pr create`, each with its own
+confirmation. Never merge a PR — that click is Vedant's.
+
+**While Vedant is the only contributor**, PRs come from one long-lived branch, `vedant`: work on it,
+push it, open the PR from it, and after a merge carry on from the same branch. Merges are merge
+commits only, which keeps `vedant` inside `main`'s history. When a second person joins, this
+paragraph goes and each change gets its own branch.
