@@ -121,3 +121,22 @@ GPU_OFFER = "jarvis-a100-80gb-spot"
 GPU_TAX = 0.18  # GST, which India levies on each of these
 GPU_PEAK_FLOPS = 312e12  # dense bf16
 GPU_MFU = 0.3  # share of the peak a 30M model reaches; a guess until a run prints its ms/iter
+
+# Loss-curve plots (training.curves). Categorical slots in assignment order, which is the data: do
+# not sort. A ninth run is refused rather than given a generated hue.
+PLOT_SERIES_COLORS = (
+    "#2a78d6",
+    "#eb6834",
+    "#1baf7a",
+    "#eda100",
+    "#e87ba4",
+    "#008300",
+    "#4a3aa7",
+    "#e34948",
+)
+PLOT_SURFACE = "#fcfcfb"
+PLOT_TEXT = "#0b0b0b"
+PLOT_TEXT_MUTED = "#52514e"
+PLOT_GRID = "#e6e5e1"
+PLOT_DPI = 150
+PLOT_MARKERS_UP_TO = 20  # a curve with this many rows or fewer also gets a marker at each row

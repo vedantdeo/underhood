@@ -24,6 +24,7 @@ DEPENDENCY_ORDER = (
     "tests/gpu/test_pricing.py",
     "tests/gpu/test_boundary.py",
     "tests/training/test_scale.py",
+    "tests/training/test_curves.py",
     "tests/inference/test_sampling.py",
     "tests/inference/test_benchmark.py",
     "tests/inference/test_quantization.py",

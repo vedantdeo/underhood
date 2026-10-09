@@ -8,8 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 # None: config and gpu/ need only the standard library, so a consumer such as aigent can price a run
-# without installing torch. What the models need is in the train and mlx groups, which every
-# `uv sync` here installs by default and no consumer ever does.
+# without installing torch. What the models need is in the train and mlx groups, and plotting in
+# plot: every `uv sync` here installs them by default, and no consumer ever does.
 dependencies = []
 
 [project.scripts]
@@ -19,6 +19,7 @@ underhood-fetch-tinystories = "underhood.data:tinystories_main"
 underhood-bpe-compare = "underhood.tokenizer.compare:main"
 underhood-train = "underhood.training.loop:main"
 underhood-train-gpu = "underhood.training.scale:main"
+underhood-plot-curves = "underhood.training.curves:main"
 underhood-gpt2-check = "underhood.model.pretrained:main"
 underhood-sample = "underhood.inference.sampling:main"
 underhood-kv-bench = "underhood.inference.benchmark:main"
@@ -39,6 +40,9 @@ dev = [
 mlx = [
     "mlx-lm>=0.31.3; sys_platform == 'darwin'",
 ]
+plot = [
+    "matplotlib>=3.11.2",
+]
 train = [
     "huggingface-hub>=1.32.0",
     "numpy>=2.5.3",
@@ -48,7 +52,7 @@ train = [
 ]
 
 [tool.uv]
-default-groups = ["dev", "mlx", "train"]
+default-groups = ["dev", "mlx", "plot", "train"]
 
 [tool.ruff]
 line-length = 100
