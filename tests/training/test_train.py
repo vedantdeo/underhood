@@ -1,4 +1,4 @@
-"""Specification for training/loop.py: the split, the batches, the loss estimate, then the run."""
+"""Specification for training/train.py: the split, the batches, the loss estimate, then the run."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import torch
 
-import underhood.training.loop as loop
+import underhood.training.train as train_module
 from tests.conftest import GptFactory, TinyDims
 from underhood import config, data
-from underhood.training.loop import estimate_loss, get_batch, split_data, train
+from underhood.training.train import estimate_loss, get_batch, split_data, train
 
 CPU = torch.device("cpu")
 
@@ -143,21 +143,21 @@ def test_the_encoded_corpus_is_cached_and_rebuilt_when_the_vocab_changes(
     text = tmp_path / "shakespeare.txt"
     text.write_text("to be or not to be, that is the question\n" * 20, encoding="utf-8")
     monkeypatch.setattr(data, "tiny_shakespeare", lambda: text)
-    monkeypatch.setattr(loop, "ENCODED", tmp_path / "bpe.pt")
+    monkeypatch.setattr(train_module, "ENCODED", tmp_path / "bpe.pt")
     monkeypatch.setattr(config, "VOCAB_SIZE", 262)
     trained: list[int] = []
-    train_bpe = loop.BPETokenizer.train
+    train_bpe = train_module.BPETokenizer.train
 
-    def counting(self: loop.BPETokenizer, corpus: str, vocab_size: int) -> None:
+    def counting(self: train_module.BPETokenizer, corpus: str, vocab_size: int) -> None:
         trained.append(vocab_size)
         train_bpe(self, corpus, vocab_size)
 
-    monkeypatch.setattr(loop.BPETokenizer, "train", counting)
+    monkeypatch.setattr(train_module.BPETokenizer, "train", counting)
 
-    tokenizer, ids = loop._encoded_corpus()
-    again, cached_ids = loop._encoded_corpus()
+    tokenizer, ids = train_module._encoded_corpus()
+    again, cached_ids = train_module._encoded_corpus()
     monkeypatch.setattr(config, "VOCAB_SIZE", 264)
-    loop._encoded_corpus()
+    train_module._encoded_corpus()
 
     assert tokenizer.decode(ids) == text.read_text(encoding="utf-8")
     assert (cached_ids, again.merges) == (ids, tokenizer.merges), "the second call read the cache"

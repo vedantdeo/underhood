@@ -1,7 +1,7 @@
 """What a run takes on a rented GPU, in seconds and dollars, from the rates in config.
 
-The tests in tests/gpu/test_pricing.py are the specification: estimated_seconds, rental_usd, then
-hourly_usd.
+The tests in tests/gpu/test_pricing.py are the specification: estimated_seconds, rental_usd,
+hourly_usd, then card.
 """
 
 from __future__ import annotations
@@ -30,3 +30,14 @@ def hourly_usd(offer: str, rates: Mapping[str, float], tax: float) -> float:
     if offer not in rates:
         raise ValueError(f"no GPU offer named {offer!r}; there is {', '.join(sorted(rates))}")
     return rates[offer] * (1 + tax)
+
+
+def card(offer: str, peaks: Mapping[str, float]) -> str:
+    """The card `offer` rents: the one name in `peaks` that is a dash-separated part of it. Raises
+    ValueError when none is, naming the cards it knows, or when several are."""
+    found = [name for name in peaks if name in offer.split("-")]
+    if not found:
+        raise ValueError(f"no known card in {offer!r}; there is {', '.join(sorted(peaks))}")
+    if len(found) > 1:
+        raise ValueError(f"several cards in {offer!r}: {', '.join(sorted(found))}")
+    return found[0]

@@ -1,10 +1,11 @@
-"""Specification for training/scale.py: the schedule, mixed precision, accumulation, checkpoints,
-then the resumable run that uses them all."""
+"""Specification for training/train_gpu.py: the schedule, mixed precision, accumulation,
+checkpoints, then the resumable run that uses them all."""
 
 from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -12,12 +13,13 @@ import pytest
 import torch
 from torch import Tensor
 
-import underhood.training.scale as scale
+import underhood.training.train_gpu as train_gpu
 from tests.conftest import GptFactory, TinyDims
 from underhood import config, data
+from underhood.gpu.pricing import card, estimated_seconds
 from underhood.model.gpt import GPT
-from underhood.training.loop import Snapshot
-from underhood.training.scale import (
+from underhood.training.train import Snapshot
+from underhood.training.train_gpu import (
     RunSettings,
     accumulate_step,
     autocast,
@@ -75,14 +77,27 @@ def test_lr_at_without_warmup_starts_at_the_peak() -> None:
 
 
 @pytest.mark.parametrize(
-    ("device", "dtype"),
+    ("device", "capability", "dtype"),
     [
-        pytest.param("cuda", torch.bfloat16, id="bf16 on CUDA"),
-        pytest.param("mps", None, id="fp32 on MPS"),
-        pytest.param("cpu", None, id="fp32 on CPU"),
+        pytest.param("cuda", (8, 0), torch.bfloat16, id="bf16 on an A100"),
+        pytest.param("cuda", (9, 0), torch.bfloat16, id="bf16 on an H100"),
+        pytest.param("cuda", (7, 5), torch.float16, id="fp16 on a T4, which has no bf16"),
+        pytest.param("mps", None, None, id="fp32 on MPS"),
+        pytest.param("cpu", None, None, id="fp32 on CPU"),
     ],
 )
-def test_autocast_dtype(device: str, dtype: torch.dtype | None) -> None:
+def test_autocast_dtype(
+    device: str,
+    capability: tuple[int, int] | None,
+    dtype: torch.dtype | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def capability_of(_: torch.device) -> tuple[int, int]:
+        if capability is None:
+            raise AssertionError("only a CUDA device has a compute capability to ask for")
+        return capability
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", capability_of)
     assert autocast_dtype(torch.device(device)) == dtype
 
 
@@ -90,6 +105,7 @@ def test_autocast_dtype(device: str, dtype: torch.dtype | None) -> None:
     ("dtype", "computed_in"),
     [
         pytest.param(torch.bfloat16, torch.bfloat16, id="bf16 autocast computes a matmul in bf16"),
+        pytest.param(torch.float16, torch.float16, id="fp16 autocast computes a matmul in fp16"),
         pytest.param(None, torch.float32, id="no autocast leaves it in fp32"),
     ],
 )
@@ -174,6 +190,45 @@ def test_accumulate_step_trains_under_bf16_and_keeps_fp32_weights(
     assert all(p.dtype == torch.float32 for p in model.parameters())
 
 
+def test_fp16_with_a_scaler_steps_like_fp32(make_gpt: GptFactory, dims: TinyDims) -> None:
+    """The loss is scaled up for the backward pass and the gradients unscaled before the clip."""
+    batch = [_batch(dims, 4)]
+    steps = []
+    for dtype in (None, torch.float16):
+        model = make_gpt().train()
+        before = _params(model)
+        scaler = torch.amp.GradScaler("cpu", enabled=dtype is not None)
+        accumulate_step(
+            model, torch.optim.SGD(model.parameters(), lr=0.5), batch, 1.0, dtype, scaler
+        )
+        steps.append(_params(model) - before)
+    fp32, fp16 = steps
+    gap = ((fp16 - fp32).norm() / fp32.norm()).item()
+    assert gap < 1e-2, f"the fp16 step is {gap:.1%} away from the fp32 one"
+
+
+def _overflowing(make_gpt: GptFactory) -> GPT:
+    """A loss near 1e4, which times GradScaler's starting scale of 65536 overflows fp16."""
+    model = make_gpt().train()
+    with torch.no_grad():
+        model.lm_head.weight.mul_(1e4)
+    return model
+
+
+def test_a_scaler_skips_a_step_whose_gradients_overflowed(
+    make_gpt: GptFactory, dims: TinyDims
+) -> None:
+    model = _overflowing(make_gpt)
+    before = _params(model)
+    scaler = torch.amp.GradScaler("cpu")
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.5)
+
+    accumulate_step(model, optimizer, [_batch(dims, 4)], 1.0, torch.float16, scaler)
+
+    assert torch.equal(_params(model), before), "an overflowed step reached the weights"
+    assert scaler.get_scale() == 32768.0, "the scale did not back off for the next step"
+
+
 def test_accumulate_step_refuses_no_micro_batches(make_gpt: GptFactory) -> None:
     model = make_gpt()
     with pytest.raises(ValueError):
@@ -224,6 +279,34 @@ def test_saving_again_replaces_the_checkpoint(
     save_checkpoint(path, model, optimizer, 10, [], generator)
     iteration, _ = load_checkpoint(path, make_gpt(), torch.optim.SGD(model.parameters()), generator)
     assert iteration == 10
+
+
+@pytest.mark.parametrize(
+    ("overflow", "saved_with_scaler", "scale"),
+    [
+        pytest.param(True, True, 32768.0, id="the scale a run backed off to survives a resume"),
+        pytest.param(False, False, 65536.0, id="a bf16 run's checkpoint leaves the scale at start"),
+    ],
+)
+def test_a_checkpoint_restores_the_loss_scale(
+    make_gpt: GptFactory,
+    dims: TinyDims,
+    tmp_path: Path,
+    overflow: bool,
+    saved_with_scaler: bool,
+    scale: float,
+) -> None:
+    model = _overflowing(make_gpt) if overflow else make_gpt().train()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.5)
+    scaler = torch.amp.GradScaler("cpu")
+    accumulate_step(model, optimizer, [_batch(dims, 4)], 1.0, torch.float16, scaler)
+    path, generator = tmp_path / "ckpt.pt", torch.Generator()
+    save_checkpoint(path, model, optimizer, 1, [], generator, scaler if saved_with_scaler else None)
+
+    fresh = torch.amp.GradScaler("cpu")
+    load_checkpoint(path, make_gpt(), torch.optim.SGD(model.parameters()), generator, fresh)
+
+    assert fresh.get_scale() == scale
 
 
 SETTINGS = RunSettings(
@@ -286,7 +369,7 @@ def test_a_run_that_crashes_resumes_to_exactly_where_it_would_have_been(
     straight, _, straight_history, _ = _run(make_gpt, stream, None)
 
     path = tmp_path / "ckpt.pt"
-    real_step = scale.accumulate_step
+    real_step = train_gpu.accumulate_step
     calls = 0
 
     def crash_on_seventh(
@@ -295,17 +378,18 @@ def test_a_run_that_crashes_resumes_to_exactly_where_it_would_have_been(
         micro_batches: Sequence[tuple[Tensor, Tensor]],
         grad_clip: float | None = None,
         dtype: torch.dtype | None = None,
+        scaler: torch.amp.GradScaler | None = None,
     ) -> float:
         nonlocal calls
         calls += 1
         if calls == 7:
             raise RuntimeError("the instance was preempted")
-        return real_step(model, optimizer, micro_batches, grad_clip, dtype)
+        return real_step(model, optimizer, micro_batches, grad_clip, dtype, scaler)
 
-    monkeypatch.setattr(scale, "accumulate_step", crash_on_seventh)
+    monkeypatch.setattr(train_gpu, "accumulate_step", crash_on_seventh)
     with pytest.raises(RuntimeError, match="preempted"):
         _run(make_gpt, stream, path)
-    monkeypatch.setattr(scale, "accumulate_step", real_step)
+    monkeypatch.setattr(train_gpu, "accumulate_step", real_step)
 
     resumed, _, resumed_history, seen = _run(make_gpt, stream, path, seed=123)
 
@@ -325,6 +409,71 @@ def test_relaunching_a_finished_run_changes_nothing(
     assert seen == []
 
 
+@pytest.mark.parametrize(
+    ("dtype", "scaled"),
+    [
+        pytest.param(torch.float16, True, id="fp16 scales the loss"),
+        pytest.param(torch.bfloat16, False, id="bf16 has fp32's range and needs no scaling"),
+        pytest.param(None, False, id="fp32 needs no scaling"),
+    ],
+)
+def test_train_run_scales_the_loss_only_under_fp16(
+    make_gpt: GptFactory,
+    stream: Tensor,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dtype: torch.dtype | None,
+    scaled: bool,
+) -> None:
+    stepped: list[torch.amp.GradScaler | None] = []
+    saved: list[torch.amp.GradScaler | None] = []
+    real_step, real_save = train_gpu.accumulate_step, train_gpu.save_checkpoint
+
+    def spy_step(
+        model: GPT,
+        optimizer: torch.optim.Optimizer,
+        micro_batches: Sequence[tuple[Tensor, Tensor]],
+        grad_clip: float | None = None,
+        dtype: torch.dtype | None = None,
+        scaler: torch.amp.GradScaler | None = None,
+    ) -> float:
+        stepped.append(scaler)
+        return real_step(model, optimizer, micro_batches, grad_clip, dtype, scaler)
+
+    def spy_save(
+        path: Path,
+        model: GPT,
+        optimizer: torch.optim.Optimizer,
+        iteration: int,
+        history: list[Snapshot],
+        generator: torch.Generator,
+        scaler: torch.amp.GradScaler | None = None,
+    ) -> None:
+        saved.append(scaler)
+        real_save(path, model, optimizer, iteration, history, generator, scaler)
+
+    monkeypatch.setattr(train_gpu, "accumulate_step", spy_step)
+    monkeypatch.setattr(train_gpu, "save_checkpoint", spy_save)
+    model = make_gpt().train()
+    run = RunSettings(**{**asdict(SETTINGS), "dtype": dtype})
+    history = train_run(
+        model,
+        torch.optim.AdamW(model.parameters(), lr=run.max_lr),
+        stream,
+        stream,
+        CPU,
+        run,
+        torch.Generator().manual_seed(0),
+        tmp_path / "ckpt.pt",
+    )
+
+    assert len(stepped) == run.max_iters and saved, (len(stepped), len(saved))
+    used = {id(s): s for s in stepped + saved}
+    enabled = [s is not None and s.is_enabled() for s in used.values()]
+    assert enabled == [scaled] * len(used), "one scaler, for every step and every checkpoint"
+    assert history[-1].train_loss < history[0].train_loss, history
+
+
 # --- the GPU run's model, optimizer and data ----------------------------------------------------
 
 GPT2_VOCAB = 50257
@@ -334,7 +483,7 @@ GPT2_VOCAB = 50257
 def gpu_model(monkeypatch: pytest.MonkeyPatch) -> GPT:
     monkeypatch.setattr(data, "gpt2_vocab_size", lambda: GPT2_VOCAB)  # tiktoken may download
     torch.manual_seed(0)
-    return scale._model()
+    return train_gpu._model()
 
 
 def test_the_gpu_model_ties_its_head_to_the_embedding(gpu_model: GPT) -> None:
@@ -351,7 +500,7 @@ def test_the_gpu_model_starts_its_embedding_at_gpt2s_scale(gpu_model: GPT) -> No
 
 def test_the_optimizer_decays_the_matrices_and_nothing_else(make_gpt: GptFactory) -> None:
     model = make_gpt()
-    optimizer = scale._optimizer(model, CPU)
+    optimizer = train_gpu._optimizer(model, CPU)
 
     decayed, kept = optimizer.param_groups
     matrices = {id(p) for p in model.parameters() if p.dim() >= 2}
@@ -368,7 +517,7 @@ def test_a_token_file_loads_as_int64_ids(tmp_path: Path) -> None:
     path = tmp_path / "train.bin"
     np.asarray(ids, dtype=np.uint16).tofile(path)
 
-    tokens = scale.load_tokens(path)
+    tokens = train_gpu.load_tokens(path)
 
     assert tokens.dtype == torch.int64
     assert tokens.tolist() == ids
@@ -381,6 +530,7 @@ def test_a_token_file_loads_as_int64_ids(tmp_path: Path) -> None:
         pytest.param(
             ["--gpu", "runpod-community-a100-80gb"], "runpod-community-a100-80gb", id="one picked"
         ),
+        pytest.param(["--gpu", "kaggle-t4"], "kaggle-t4", id="the free T4"),
     ],
 )
 def test_estimate_prices_every_offer_without_fetching_or_training(
@@ -397,11 +547,16 @@ def test_estimate_prices_every_offer_without_fetching_or_training(
     argv = ["underhood-train-gpu", "--estimate", "--max-iters", "100", *flags]
     monkeypatch.setattr("sys.argv", argv)
 
-    scale.main()
+    train_gpu.main()
 
     header, *rows = capsys.readouterr().out.strip().splitlines()
     tokens = 100 * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
     assert f"{tokens:,} tokens" in header and f"{config.GPU_TAX:.0%} tax" in header, header
+    params = sum(p.numel() for p in train_gpu._model().parameters())
+    for row in rows:
+        on = card(row.split()[2], config.GPU_PEAK_FLOPS)
+        seconds = estimated_seconds(params, tokens, config.GPU_PEAK_FLOPS[on], config.GPU_MFU[on])
+        assert f"{seconds / 60:,.0f} min" in row, f"{row} is not timed on its own card, the {on}"
     named = [row.split()[2] for row in rows]
     assert sorted(named) == sorted(config.GPU_OFFERS), "a row per offer"
     costs = [float(row.split()[0].lstrip("$")) for row in rows]

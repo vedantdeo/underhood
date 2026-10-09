@@ -63,20 +63,20 @@ the only place the weeks appear.
 | 1 | `tokenizer/bpe.py` | get_stats, merge, train, encode, decode | roundtrip tests, then tiktoken via `underhood-bpe-compare` |
 | 1 | `model/attention.py` | causal mask, single head, multi-head | `torch.nn.functional.scaled_dot_product_attention` |
 | 2 | `model/gpt.py` | FeedForward, Block, GPT | cross-entropy at init, causality, its own logits |
-| 2 | `training/loop.py` | split, batches, loss estimate, the loop itself | loss curve on MPS |
+| 2 | `training/train.py` | split, batches, loss estimate, the loop itself | loss curve on MPS |
 | 2 | `model/attention.py` | KVCache, and a mask that widens over cached keys | stepping through a cache matches one full forward |
 | 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions; the same tokens with a cache and without |
 | 3 | `inference/quantization.py` | bf16 against 8-, 6- and 4-bit conversions of the same checkpoint: TTFT, decode rate, memory | KL divergence from bf16's next-token distributions; the side-by-side outputs |
 | 4 | `finetune/lora.py`, `finetune/dpo.py` | LoRA layer; DPO loss | toy fine-tune eval; gradient check |
 | 5 | `model/pretrained.py` | GPT-2's bias and tanh-GELU switches; its weights renamed into yours | Hugging Face's logits and loss; greedy text via `underhood-gpt2-check` |
-| 5 | `training/scale.py` | warmup-cosine lr, bf16 autocast, gradient accumulation, resumable checkpoints, the run | one big batch; a crashed run resumed; loss curve on an A100 vs MPS |
+| 5 | `training/train_gpu.py` | warmup-cosine lr, bf16 or scaled fp16 autocast, gradient accumulation, resumable checkpoints, the run | one big batch; a crashed run resumed; loss curve on an A100 vs MPS |
 
 Rules for this repo: write the implementation before reading the reference code, then read it and
 compare. Keep the tests as the spec; add a test before you extend an interface.
 
 ## GPU day runbook
 
-Once `tests/training/test_scale.py` is green, and only after the rental is approved:
+Once `tests/training/test_train_gpu.py` is green, and only after the rental is approved:
 
 0. Locally, `uv run underhood-train-gpu --estimate`: minutes on an A100 at a guessed MFU and what
    each offer in `config.GPU_OFFERS` charges for them with GST (`underhood.gpu.pricing`), nothing

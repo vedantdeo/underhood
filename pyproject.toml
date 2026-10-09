@@ -8,8 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 # None: config and gpu/ need only the standard library, so a consumer such as aigent can price a run
-# without installing torch. What the models need is in the train and mlx groups, and plotting in
-# plot: every `uv sync` here installs them by default, and no consumer ever does.
+# without installing torch. What the models need is in the train and mlx groups, plotting in plot
+# and the kaggle CLI in cloud: every `uv sync` here installs them by default, and no consumer does.
 dependencies = []
 
 [project.scripts]
@@ -17,8 +17,10 @@ underhood-check = "underhood.device:main"
 underhood-fetch = "underhood.data:main"
 underhood-fetch-tinystories = "underhood.data:tinystories_main"
 underhood-bpe-compare = "underhood.tokenizer.compare:main"
-underhood-train = "underhood.training.loop:main"
-underhood-train-gpu = "underhood.training.scale:main"
+underhood-train = "underhood.training.train:main"
+underhood-train-gpu = "underhood.training.train_gpu:main"
+underhood-kaggle = "underhood.gpu.kaggle:main"
+underhood-hub = "underhood.gpu.hub:main"
 underhood-plot-curves = "underhood.training.curves:main"
 underhood-gpt2-check = "underhood.model.pretrained:main"
 underhood-sample = "underhood.inference.sampling:main"
@@ -31,6 +33,9 @@ requires = ["uv_build>=0.12.9,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+cloud = [
+    "kaggle>=2.2.4",
+]
 dev = [
     "pyright>=1.1.411",
     "pytest>=9.1.1",
@@ -52,7 +57,7 @@ train = [
 ]
 
 [tool.uv]
-default-groups = ["dev", "mlx", "plot", "train"]
+default-groups = ["cloud", "dev", "mlx", "plot", "train"]
 
 [tool.ruff]
 line-length = 100

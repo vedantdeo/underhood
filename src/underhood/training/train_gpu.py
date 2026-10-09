@@ -1,7 +1,7 @@
 """Training at GPU scale: a learning-rate schedule, mixed precision, gradient accumulation, and a
 checkpoint a preempted run can resume from exactly.
 
-The tests in tests/training/test_scale.py are the specification, in this order: lr_at,
+The tests in tests/training/test_train_gpu.py are the specification, in this order: lr_at,
 autocast_dtype, autocast, accumulate_step, save_checkpoint and load_checkpoint, then train_run.
 main() is already written: TinyStories in, a loss curve, ms/iter and a checkpoint out, and with
 --estimate what the run would cost before renting anything (underhood.gpu.pricing).
@@ -9,7 +9,8 @@ main() is already written: TinyStories in, a loss curve, ms/iter and a checkpoin
 uv run underhood-fetch-tinystories   # once: download and encode, about 1 GB of uint16 ids
 uv run underhood-train-gpu           # on the rented A100
 uv run underhood-train-gpu --max-iters 20   # the same model on MPS, for the ms/iter comparison
-uv run underhood-train-gpu --estimate       # minutes and dollars on an A100, nothing trained
+uv run underhood-train-gpu --estimate       # minutes and dollars on each offer, nothing trained
+uv run underhood-kaggle push t4             # the same run on a free Kaggle T4 (gpu.kaggle)
 
 Reference: nanoGPT's train.py. Do not read reference/ until yours passes.
 """
@@ -30,10 +31,10 @@ from torch import Tensor
 
 from underhood import config, data
 from underhood.device import pick_device
-from underhood.gpu.pricing import estimated_seconds, hourly_usd, rental_usd
+from underhood.gpu.pricing import card, estimated_seconds, hourly_usd, rental_usd
 from underhood.model.gpt import GPT
-from underhood.training import loop
-from underhood.training.loop import Snapshot
+from underhood.training import train
+from underhood.training.train import Snapshot
 
 GPU_DIR = data.DATA_DIR / "gpu"
 
@@ -71,12 +72,15 @@ def lr_at(iteration: int, max_iters: int, warmup_iters: int, max_lr: float, min_
 
 
 def autocast_dtype(device: torch.device) -> torch.dtype | None:
-    """bfloat16 on CUDA, None (float32) anywhere else.
+    """bfloat16 on CUDA from Ampere (compute capability 8.0) on, float16 on older CUDA cards such
+    as the T4, and None (float32) anywhere else.
 
-    bfloat16 has float32's range, so unlike float16 it needs no GradScaler; every A100 and later
-    has it. MPS autocast exists but buys little for a model this size, so the MPS run stays fp32.
+    bfloat16 has float32's range, so unlike float16 it needs no GradScaler. MPS autocast exists but
+    buys little for a model this size, so the MPS run stays fp32.
     """
-    return torch.bfloat16 if device.type == "cuda" else None
+    if device.type != "cuda":
+        return None
+    return torch.bfloat16 if torch.cuda.get_device_capability(device) >= (8, 0) else torch.float16
 
 
 def autocast(device: torch.device, dtype: torch.dtype | None) -> AbstractContextManager[object]:
@@ -96,28 +100,33 @@ def accumulate_step(
     micro_batches: Sequence[tuple[Tensor, Tensor]],
     grad_clip: float | None = None,
     dtype: torch.dtype | None = None,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> float:
     """One optimizer step over several micro-batches; return their mean loss as a float.
 
     Clear the gradients, then for each (x, y) take the loss under autocast and backpropagate it
     divided by the number of micro-batches, so the summed gradients equal one batch of them all.
-    Clip the total gradient norm to grad_clip when one is given, then step. Raise ValueError on
-    no micro-batches.
+    Clip the total gradient norm to grad_clip when one is given, then step. With a scaler, as fp16
+    needs, the loss is scaled before backward, unscaled before the clip, and an overflowed step is
+    skipped. Raise ValueError on no micro-batches.
     """
     if not micro_batches:
         raise ValueError("accumulate_step needs at least one micro-batch")
     device = next(model.parameters()).device
+    scaler = scaler or torch.amp.GradScaler(device.type, enabled=False)  # disabled: a no-op
     optimizer.zero_grad(set_to_none=True)
     total = torch.zeros((), device=device)
     for x, y in micro_batches:
         with autocast(device, dtype):  # the forward only; backward reuses each op's dtype
             _, loss = model(x, y)
         assert loss is not None
-        (loss / len(micro_batches)).backward()
+        scaler.scale(loss / len(micro_batches)).backward()
         total += loss.detach().float()
+    scaler.unscale_(optimizer)
     if grad_clip is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    optimizer.step()
+    scaler.step(optimizer)
+    scaler.update()
     return total.item() / len(micro_batches)  # one GPU sync per step, not one per micro-batch
 
 
@@ -128,11 +137,13 @@ def save_checkpoint(
     iteration: int,
     history: list[Snapshot],
     generator: torch.Generator,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> None:
     """Everything a resumed run needs to carry on as if never stopped, written to path.
 
     That is the model's and optimizer's state dicts, the number of steps taken, the curve so far,
-    and the generator's state, without which the resumed run draws different batches. Write to a
+    the generator's state, without which the resumed run draws different batches, and the fp16
+    loss scale when there is a scaler. Write to a
     temporary file beside path and rename it over path, so a crash mid-write never leaves a
     half-written checkpoint where the last good one was.
     """
@@ -144,6 +155,7 @@ def save_checkpoint(
             "iteration": iteration,
             "history": [tuple(row) for row in history],  # plain tuples, so weights_only can load
             "generator": generator.get_state(),
+            "scaler": scaler.state_dict() if scaler is not None else {},
         },
         temporary,
     )
@@ -151,16 +163,23 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    path: Path, model: GPT, optimizer: torch.optim.Optimizer, generator: torch.Generator
+    path: Path,
+    model: GPT,
+    optimizer: torch.optim.Optimizer,
+    generator: torch.Generator,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> tuple[int, list[Snapshot]]:
-    """Restore what save_checkpoint wrote into model, optimizer and generator, in place.
+    """Restore what save_checkpoint wrote into model, optimizer, generator and scaler, in place.
 
-    Return the number of steps already taken and the curve so far, as Snapshots.
+    A checkpoint saved without a loss scale leaves the scaler as it was. Return the number of steps
+    already taken and the curve so far, as Snapshots.
     """
     state = torch.load(path, map_location="cpu", weights_only=True)
     model.load_state_dict(state["model"])
     optimizer.load_state_dict(state["optimizer"])  # moments land on the parameters' device
     generator.set_state(state["generator"])
+    if scaler is not None and state.get("scaler"):  # bf16 and fp32 runs, and older ones, have none
+        scaler.load_state_dict(state["scaler"])
     return int(state["iteration"]), [Snapshot(*row) for row in state["history"]]
 
 
@@ -175,27 +194,29 @@ def train_run(
     checkpoint: Path | None = None,
     on_eval: Callable[[Snapshot], None] | None = None,
 ) -> list[Snapshot]:
-    """loop.train at scale, resumable: the whole curve, including rows from before any resume.
+    """train.train at scale, resumable: the whole curve, including rows from before any resume.
 
     If checkpoint exists, load it and continue from the step it records; a finished run returns
     its curve untouched. Each iteration sets
-    every param group's lr from lr_at, draws accum_steps micro-batches with loop.get_batch and the
+    every param group's lr from lr_at, draws accum_steps micro-batches with train.get_batch and the
     generator, and calls accumulate_step by name (the tests stand in for it to simulate a crash).
-    Evaluate as loop.train does — at 0, every eval_interval and at the end, under autocast —
+    Evaluate as train.train does — at 0, every eval_interval and at the end, under autocast —
     passing each new row to on_eval. Save to checkpoint, when given, after every
-    checkpoint_interval-th step and once more at the end.
+    checkpoint_interval-th step and once more at the end. One GradScaler, enabled only under fp16,
+    goes to every step and every checkpoint.
     """
     model.to(device)  # before loading, so the optimizer's moments land beside the parameters
+    scaler = torch.amp.GradScaler(device.type, enabled=run.dtype == torch.float16)
     iteration, history = 0, []
     if checkpoint is not None and checkpoint.exists():
-        iteration, history = load_checkpoint(checkpoint, model, optimizer, generator)
+        iteration, history = load_checkpoint(checkpoint, model, optimizer, generator, scaler)
         if iteration >= run.max_iters:
             return history
     splits = {"train": train_data, "val": val_data}
 
     def record(at: int) -> None:
         with autocast(device, run.dtype):
-            losses = loop.estimate_loss(
+            losses = train.estimate_loss(
                 model, splits, device, run.micro_batch, run.eval_iters, generator
             )
         row = Snapshot(at, losses["train"], losses["val"])
@@ -210,17 +231,17 @@ def train_run(
         for group in optimizer.param_groups:
             group["lr"] = lr
         micro_batches = [
-            loop.get_batch(train_data, model.block_size, run.micro_batch, device, generator)
+            train.get_batch(train_data, model.block_size, run.micro_batch, device, generator)
             for _ in range(run.accum_steps)
         ]
-        accumulate_step(model, optimizer, micro_batches, run.grad_clip, run.dtype)
+        accumulate_step(model, optimizer, micro_batches, run.grad_clip, run.dtype, scaler)
         done = step + 1
         if checkpoint is not None and done % run.checkpoint_interval == 0 and done < run.max_iters:
-            save_checkpoint(checkpoint, model, optimizer, done, history, generator)
+            save_checkpoint(checkpoint, model, optimizer, done, history, generator, scaler)
 
     record(run.max_iters)
     if checkpoint is not None:
-        save_checkpoint(checkpoint, model, optimizer, run.max_iters, history, generator)
+        save_checkpoint(checkpoint, model, optimizer, run.max_iters, history, generator, scaler)
     return history
 
 
@@ -262,21 +283,23 @@ def _optimizer(model: GPT, device: torch.device) -> torch.optim.AdamW:
 
 
 def _estimate(model: GPT, max_iters: int, chosen: str) -> str:
-    """The run's A100 compute time at the guessed MFU, and what each offer charges for it with tax,
-    cheapest first, `chosen` marked."""
+    """Each offer's compute time on its own card at that card's MFU, and what it charges for it
+    with tax, cheapest first, `chosen` marked."""
     params = sum(p.numel() for p in model.parameters())
     tokens = max_iters * config.GPU_MICRO_BATCH * config.GPU_ACCUM_STEPS * config.GPU_BLOCK_SIZE
-    seconds = estimated_seconds(params, tokens, config.GPU_PEAK_FLOPS, config.GPU_MFU)
-    hourly = {
-        offer: hourly_usd(offer, config.GPU_OFFERS, config.GPU_TAX) for offer in config.GPU_OFFERS
-    }
+    rows: list[tuple[float, float, str, float]] = []  # (cost, hourly, offer, seconds)
+    for offer in config.GPU_OFFERS:
+        on = card(offer, config.GPU_PEAK_FLOPS)
+        seconds = estimated_seconds(params, tokens, config.GPU_PEAK_FLOPS[on], config.GPU_MFU[on])
+        rate = hourly_usd(offer, config.GPU_OFFERS, config.GPU_TAX)
+        rows.append((rental_usd(seconds, rate), rate, offer, seconds))
     lines = [
-        f"{params:,} params, {tokens:,} tokens: about {seconds / 60:,.0f} min of A100 compute at "
-        f"{config.GPU_MFU:.0%} MFU, before setup and the download; with {config.GPU_TAX:.0%} tax:"
+        f"{params:,} params, {tokens:,} tokens: compute time at each card's MFU, before setup and "
+        f"the download; with {config.GPU_TAX:.0%} tax:"
     ]
-    for offer, rate in sorted(hourly.items(), key=lambda item: item[1]):
+    for cost, rate, offer, seconds in sorted(rows):
         mark = "  <- --gpu" if offer == chosen else ""
-        lines.append(f"  ${rental_usd(seconds, rate):.2f}  ${rate:.2f}/hr  {offer}{mark}")
+        lines.append(f"  ${cost:.2f}  ${rate:.2f}/hr  {offer}  {seconds / 60:,.0f} min{mark}")
     return "\n".join(lines)
 
 
@@ -296,7 +319,7 @@ def main() -> None:
     parser.add_argument(
         "--estimate",
         action="store_true",
-        help="print the A100 time and each offer's cost, then stop",
+        help="print each offer's time and cost, then stop",
     )
     args = parser.parse_args()
     if args.estimate:
