@@ -128,7 +128,7 @@ GPU_PEAK_FLOPS: dict[str, float] = {
 }
 GPU_MFU: dict[str, float] = {
     "a100": 0.25,  # a 30M model on 2026-10-09: 306.6 ms/iter, evals included
-    "t4": 0.25,  # a first guess until a T4 run prints its ms/iter
+    "t4": 0.16,  # Kaggle, fp16, 2026-10-09: 2,297 ms/iter, evals included
 }
 
 # Free runs on Kaggle (gpu.kaggle), handing run folders back via the Hugging Face Hub (gpu.hub).

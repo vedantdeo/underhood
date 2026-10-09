@@ -3,6 +3,7 @@ checkpoints, then the resumable run that uses them all."""
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -472,6 +473,66 @@ def test_train_run_scales_the_loss_only_under_fp16(
     enabled = [s is not None and s.is_enabled() for s in used.values()]
     assert enabled == [scaled] * len(used), "one scaler, for every step and every checkpoint"
     assert history[-1].train_loss < history[0].train_loss, history
+
+
+@pytest.mark.parametrize(
+    ("choice", "device", "capability", "dtype"),
+    [
+        pytest.param("auto", "cuda", (8, 0), torch.bfloat16, id="auto picks bf16 on an A100"),
+        pytest.param("auto", "cuda", (7, 5), torch.float16, id="auto picks fp16 on a T4"),
+        pytest.param("auto", "cpu", None, None, id="auto stays fp32 on CPU"),
+        pytest.param("fp16", "cuda", (8, 0), torch.float16, id="fp16 forced on an A100"),
+        pytest.param("bf16", "cuda", (8, 0), torch.bfloat16, id="bf16 asked for by name"),
+        pytest.param("fp32", "cuda", (8, 0), None, id="fp32 turns autocast off on CUDA"),
+    ],
+)
+def test_chosen_dtype(
+    choice: str,
+    device: str,
+    capability: tuple[int, int] | None,
+    dtype: torch.dtype | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda _: capability)
+    assert train_gpu.chosen_dtype(choice, torch.device(device)) == dtype
+
+
+@pytest.mark.parametrize(
+    ("flags", "dtype"),
+    [
+        pytest.param([], None, id="by default the device decides, fp32 on CPU"),
+        pytest.param(["--dtype", "fp16"], torch.float16, id="--dtype fp16 trains in fp16"),
+    ],
+)
+def test_main_trains_in_the_chosen_dtype_and_records_it(
+    flags: list[str],
+    dtype: torch.dtype | None,
+    make_gpt: GptFactory,
+    stream: Tensor,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs: list[RunSettings] = []
+
+    def fake_train_run(*args: object) -> list[Snapshot]:
+        run = args[5]
+        assert isinstance(run, RunSettings)
+        runs.append(run)
+        return []
+
+    monkeypatch.setattr(train_gpu, "pick_device", lambda: CPU)
+    monkeypatch.setattr(train_gpu, "GPU_DIR", tmp_path)
+    monkeypatch.setattr(train_gpu, "_model", lambda: make_gpt())
+    monkeypatch.setattr(train_gpu, "load_tokens", lambda _: stream)
+    monkeypatch.setattr(train_gpu, "train_run", fake_train_run)
+    monkeypatch.setattr(data, "tinystories", lambda: (tmp_path / "t.bin", tmp_path / "v.bin"))
+    monkeypatch.setattr("sys.argv", ["underhood-train-gpu", "--name", "run", *flags])
+
+    train_gpu.main()
+
+    assert [run.dtype for run in runs] == [dtype]
+    recorded = json.loads((tmp_path / "run" / "run.json").read_text())
+    assert recorded["dtype"] == str(dtype), recorded
 
 
 # --- the GPU run's model, optimizer and data ----------------------------------------------------

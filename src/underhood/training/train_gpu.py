@@ -10,6 +10,7 @@ uv run underhood-fetch-tinystories   # once: download and encode, about 1 GB of 
 uv run underhood-train-gpu           # on the rented A100
 uv run underhood-train-gpu --max-iters 20   # the same model on MPS, for the ms/iter comparison
 uv run underhood-train-gpu --estimate       # minutes and dollars on each offer, nothing trained
+uv run underhood-train-gpu --dtype fp16     # force a dtype, as fp16 on an A100 against bf16
 uv run underhood-kaggle push t4             # the same run on a free Kaggle T4 (gpu.kaggle)
 
 Reference: nanoGPT's train.py. Do not read reference/ until yours passes.
@@ -81,6 +82,18 @@ def autocast_dtype(device: torch.device) -> torch.dtype | None:
     if device.type != "cuda":
         return None
     return torch.bfloat16 if torch.cuda.get_device_capability(device) >= (8, 0) else torch.float16
+
+
+DTYPES: dict[str, torch.dtype | None] = {
+    "bf16": torch.bfloat16,
+    "fp16": torch.float16,
+    "fp32": None,
+}
+
+
+def chosen_dtype(choice: str, device: torch.device) -> torch.dtype | None:
+    """The autocast dtype for --dtype: "auto" defers to autocast_dtype; a DTYPES name forces it."""
+    return autocast_dtype(device) if choice == "auto" else DTYPES[choice]
 
 
 def autocast(device: torch.device, dtype: torch.dtype | None) -> AbstractContextManager[object]:
@@ -317,6 +330,12 @@ def main() -> None:
         "--gpu", default=config.GPU_OFFER, choices=sorted(config.GPU_OFFERS), help="the rental"
     )
     parser.add_argument(
+        "--dtype",
+        default="auto",
+        choices=["auto", *DTYPES],
+        help="autocast's dtype; auto is bf16 from Ampere on, fp16 on older CUDA, fp32 elsewhere",
+    )
+    parser.add_argument(
         "--estimate",
         action="store_true",
         help="print each offer's time and cost, then stop",
@@ -344,7 +363,7 @@ def main() -> None:
         micro_batch=args.micro_batch,
         accum_steps=max(tokens_rows // args.micro_batch, 1),
         eval_interval=min(config.GPU_EVAL_INTERVAL, args.max_iters),
-        dtype=autocast_dtype(device),
+        dtype=chosen_dtype(args.dtype, device),
     )
     out = GPU_DIR / args.name
     out.mkdir(parents=True, exist_ok=True)
