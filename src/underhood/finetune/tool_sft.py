@@ -280,7 +280,7 @@ def main() -> None:
         Settings(),
         args.max_steps,
         half=half,
-        checkpointing=quantized,
+        checkpointing=cuda,  # bf16 LoRA without it filled all 24 GB of an A30
     )
     print(json.dumps(metrics, indent=2))
 

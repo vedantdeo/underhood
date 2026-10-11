@@ -113,12 +113,13 @@ GitHub runs schedules late at busy ones):
 - `src/underhood/config.py`     every tunable constant, in one place
 - `src/underhood/device.py`     device selection and the matmul check
 - `src/underhood/gpu/`         renting a GPU and what it costs; imports no torch, so a caller can price a run without loading it
+- `src/underhood/tools/`       calculate, sandboxed file reads and writes, and the guardrails (the fence, credential redaction) that aigent's agents run and the fine-tunes train with; standard library only
 - `src/underhood/data.py`       corpus download, and TinyStories as GPT-2 token ids
 - `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
 - `src/underhood/model/`        attention, the KV cache, the GPT that stacks them, and GPT-2's weights in it
 - `src/underhood/training/`     batching, the training loop, and the GPU-scale run
 - `src/underhood/inference/`    sampling, the benchmark that prices the KV cache, and quantization
-- `src/underhood/finetune/`     LoRA, the DPO loss, and the mlx-lm toy fine-tune
+- `src/underhood/finetune/`     LoRA, the DPO loss, the mlx-lm toy fine-tune, and tool-use SFT and its eval loop for aigent's figures
 - `tests/`                      the specification, one file per module, run in dependency order
 
 ## Questions parked for later

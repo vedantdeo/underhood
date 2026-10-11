@@ -23,6 +23,9 @@ DEPENDENCY_ORDER = (
     "tests/training/test_train.py",
     "tests/gpu/test_pricing.py",
     "tests/gpu/test_boundary.py",
+    "tests/tools/test_calc.py",
+    "tests/tools/test_files.py",
+    "tests/tools/test_guard.py",
     "tests/gpu/test_hub.py",
     "tests/gpu/test_kaggle_job.py",
     "tests/gpu/test_kaggle.py",
@@ -35,6 +38,7 @@ DEPENDENCY_ORDER = (
     "tests/finetune/test_dpo.py",
     "tests/finetune/test_toy.py",
     "tests/finetune/test_tool_sft.py",
+    "tests/finetune/test_tool_eval.py",
 )
 
 

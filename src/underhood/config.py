@@ -94,6 +94,8 @@ TOOL_SFT_MAX_TOKENS = 2048  # a passage, the rules and the tool spec are ~1,400
 TOOL_SFT_WARMUP_RATIO = 0.03
 TOOL_SFT_EVAL_STEPS = 25
 TOOL_SFT_SAVE_STEPS = 25
+TOOL_EVAL_ROUNDS = 3  # a call, its answer, and one spare
+TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
 
 # GPT-2 small, loaded into your own GPT to prove the architecture matches Hugging Face's.
 GPT2_MODEL = "openai-community/gpt2"
