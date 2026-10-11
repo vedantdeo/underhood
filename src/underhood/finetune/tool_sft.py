@@ -1,6 +1,7 @@
 """Tool-use SFT: Qwen3 learns, from aigent's extract_figures conversations, to call calculate for a
 scaled amount and answer in JSON. One example per assistant turn, its prompt rendered exactly as at
-inference; the loss falls on that turn alone. LoRA through PEFT, in fp16 on a CUDA card.
+inference; the loss falls on that turn alone. LoRA through PEFT in mixed precision, bf16 from Ampere
+on and fp16 before it; with --quantize (the default) a QLoRA run on a 4-bit base, for a T4.
 
 uv run underhood-tool-sft --data data/figures --out data/figures/run          # the run
 uv run underhood-tool-sft --data data/figures --out /tmp/smoke --max-steps 2  # a smoke run
@@ -19,17 +20,19 @@ from pathlib import Path
 from typing import cast
 
 import torch
-from peft import LoraConfig, PeftModel, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 from torch import Tensor
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     PreTrainedModel,
     Trainer,
     TrainingArguments,
 )
 
 from underhood import config
+from underhood.training.train_gpu import autocast_dtype
 
 GENERATION = "<|im_start|>assistant\n"
 IGNORE = -100
@@ -142,12 +145,14 @@ def train(
     out: Path,
     settings: Settings,
     max_steps: int | None = None,
+    half: torch.dtype | None = None,
+    checkpointing: bool = False,
 ) -> dict[str, float | int]:
-    """LoRA-train `model`, resuming from a checkpoint under `out` when there is one, then save the
-    adapter to out/adapter and the run's numbers to out/metrics.json."""
-    cuda = torch.cuda.is_available()
+    """LoRA-train `model` in `half` mixed precision, resuming from a checkpoint under `out` when
+    there is one, then save the adapter to out/adapter and the run's numbers to out/metrics.json."""
     adapted = lora(model, settings)
     checkpoints = out / "checkpoints"
+    flags = precision(half)
     args = TrainingArguments(
         output_dir=str(checkpoints),
         per_device_train_batch_size=settings.batch,
@@ -162,8 +167,9 @@ def train(
         eval_steps=settings.eval_steps,
         save_steps=settings.save_steps,
         save_total_limit=2,
-        fp16=cuda,
-        gradient_checkpointing=cuda,
+        bf16=flags["bf16"],
+        fp16=flags["fp16"],
+        gradient_checkpointing=checkpointing,
         report_to=[],
         remove_unused_columns=False,
     )
@@ -191,6 +197,27 @@ def train(
     return metrics
 
 
+def model_kwargs(half: torch.dtype | None, quantize: bool) -> dict[str, object]:
+    """How to load the base model: in `half`, the card's mixed-precision dtype, as a 4-bit NF4
+    base computing in it when `quantize`; float32 with no `half`, as on a CPU."""
+    if half is None:
+        return {"dtype": torch.float32}
+    if not quantize:
+        return {"dtype": half}
+    nf4 = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=half,
+        bnb_4bit_use_double_quant=True,
+    )
+    return {"dtype": half, "quantization_config": nf4}
+
+
+def precision(half: torch.dtype | None) -> dict[str, bool]:
+    """The Trainer's mixed-precision flags for `half`."""
+    return {"bf16": half == torch.bfloat16, "fp16": half == torch.float16}
+
+
 def load(path: Path) -> list[dict[str, object]]:
     """The conversations in one JSONL file."""
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
@@ -202,6 +229,12 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True, help="run folder: adapter, metrics")
     parser.add_argument("--model", default=config.TOOL_SFT_MODEL)
     parser.add_argument("--max-steps", type=int, default=None, help="stop early, for a smoke run")
+    parser.add_argument(
+        "--quantize",
+        action=argparse.BooleanOptionalAction,
+        default=config.TOOL_SFT_QUANTIZE,
+        help="a 4-bit base (QLoRA), for a card that cannot hold the base in half precision",
+    )
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -228,15 +261,26 @@ def main() -> None:
         print(f"{name}: {len(kept)} examples from {len(cut)} assistant turns")
 
     cuda = torch.cuda.is_available()
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model, dtype=torch.float16 if cuda else torch.float32
-    )
-    if cuda:
+    half = autocast_dtype(torch.device("cuda")) if cuda else None
+    quantized = cuda and bool(args.quantize)
+    print(f"half precision {half}, quantized {quantized}")
+    model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs(half, quantized))
+    if quantized:
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    elif cuda:
         model.enable_input_require_grads()  # checkpointing needs grads at the frozen embeddings
     args.out.mkdir(parents=True, exist_ok=True)
     pad_id = int(tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0)
     metrics = train(
-        model, pad_id, sets["train"], sets["valid"], args.out, Settings(), args.max_steps
+        model,
+        pad_id,
+        sets["train"],
+        sets["valid"],
+        args.out,
+        Settings(),
+        args.max_steps,
+        half=half,
+        checkpointing=quantized,
     )
     print(json.dumps(metrics, indent=2))
 

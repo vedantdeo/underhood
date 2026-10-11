@@ -11,7 +11,7 @@ from typing import cast
 
 import pytest
 import torch
-from transformers import Qwen3Config, Qwen3ForCausalLM
+from transformers import BitsAndBytesConfig, Qwen3Config, Qwen3ForCausalLM
 
 from underhood.finetune.tool_sft import (
     GENERATION,
@@ -22,7 +22,9 @@ from underhood.finetune.tool_sft import (
     encode,
     examples,
     lora,
+    model_kwargs,
     pad,
+    precision,
     train,
 )
 
@@ -174,3 +176,38 @@ def test_train_steps_logs_finite_losses_and_saves_the_adapter(tmp_path: Path) ->
     saved = {p.name for p in (tmp_path / "adapter").iterdir()}
     assert {"adapter_config.json", "adapter_model.safetensors"} <= saved
     assert json.loads((tmp_path / "metrics.json").read_text())["steps"] == 2
+
+
+@pytest.mark.parametrize(
+    ("half", "quantize", "dtype", "four_bit"),
+    [
+        pytest.param(None, True, torch.float32, False, id="no CUDA: float32, never quantized"),
+        pytest.param(torch.bfloat16, False, torch.bfloat16, False, id="an A30: a bf16 base"),
+        pytest.param(torch.float16, True, torch.float16, True, id="a T4: an NF4 base in fp16"),
+        pytest.param(torch.bfloat16, True, torch.bfloat16, True, id="QLoRA on Ampere, in bf16"),
+    ],
+)
+def test_model_kwargs(
+    half: torch.dtype | None, quantize: bool, dtype: torch.dtype, four_bit: bool
+) -> None:
+    kwargs = model_kwargs(half, quantize)
+
+    assert kwargs["dtype"] == dtype
+    nf4 = kwargs.get("quantization_config")
+    assert (nf4 is not None) is four_bit
+    if four_bit:
+        assert isinstance(nf4, BitsAndBytesConfig)
+        assert nf4.load_in_4bit and nf4.bnb_4bit_quant_type == "nf4"
+        assert nf4.bnb_4bit_compute_dtype == half, "computes in the card's half precision"
+
+
+@pytest.mark.parametrize(
+    ("half", "flags"),
+    [
+        pytest.param(torch.bfloat16, {"bf16": True, "fp16": False}, id="bf16 from Ampere on"),
+        pytest.param(torch.float16, {"bf16": False, "fp16": True}, id="fp16 on a T4"),
+        pytest.param(None, {"bf16": False, "fp16": False}, id="full precision on a CPU"),
+    ],
+)
+def test_precision(half: torch.dtype | None, flags: dict[str, bool]) -> None:
+    assert precision(half) == flags
