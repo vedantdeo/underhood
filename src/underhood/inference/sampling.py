@@ -19,7 +19,7 @@ from underhood.device import pick_device
 from underhood.model.attention import KVCache
 from underhood.model.gpt import GPT
 from underhood.tokenizer.bpe import BPETokenizer
-from underhood.training.loop import CHECKPOINT
+from underhood.training.train import CHECKPOINT
 
 Forward = tuple[Tensor, Tensor | None]
 

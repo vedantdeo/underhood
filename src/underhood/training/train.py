@@ -1,6 +1,6 @@
 """The training loop: batches out of a token stream, a loss estimate, and the run itself.
 
-The tests in tests/training/test_loop.py are the specification, in this order: split_data,
+The tests in tests/training/test_train.py are the specification, in this order: split_data,
 get_batch, estimate_loss, then train. main() is already written — it is the plumbing that turns
 your loop into a loss curve, a checkpoint, and the ms/iter number that settles config.py's guesses.
 

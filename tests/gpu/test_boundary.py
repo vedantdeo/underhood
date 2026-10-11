@@ -1,4 +1,5 @@
-"""The light layer stays light: underhood.gpu and config import without torch, transformers or mlx.
+"""The light layer stays light: underhood.gpu, tools and config import without torch,
+transformers or mlx.
 
 Each module is imported in a fresh interpreter, since pytest has torch loaded long before this runs.
 """
@@ -12,6 +13,7 @@ import sys
 import pytest
 
 import underhood.gpu
+import underhood.tools
 
 HEAVY = ("torch", "transformers", "mlx")
 LIGHT = [
@@ -19,6 +21,8 @@ LIGHT = [
     "underhood.config",
     "underhood.gpu",
     *(f"underhood.gpu.{info.name}" for info in pkgutil.iter_modules(underhood.gpu.__path__)),
+    "underhood.tools",
+    *(f"underhood.tools.{info.name}" for info in pkgutil.iter_modules(underhood.tools.__path__)),
 ]
 
 

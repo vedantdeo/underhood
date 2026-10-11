@@ -20,10 +20,16 @@ DEPENDENCY_ORDER = (
     "tests/model/test_attention.py",
     "tests/model/test_gpt.py",
     "tests/model/test_pretrained.py",
-    "tests/training/test_loop.py",
+    "tests/training/test_train.py",
     "tests/gpu/test_pricing.py",
     "tests/gpu/test_boundary.py",
-    "tests/training/test_scale.py",
+    "tests/tools/test_calc.py",
+    "tests/tools/test_files.py",
+    "tests/tools/test_guard.py",
+    "tests/gpu/test_hub.py",
+    "tests/gpu/test_kaggle_job.py",
+    "tests/gpu/test_kaggle.py",
+    "tests/training/test_train_gpu.py",
     "tests/training/test_curves.py",
     "tests/inference/test_sampling.py",
     "tests/inference/test_benchmark.py",
@@ -31,6 +37,8 @@ DEPENDENCY_ORDER = (
     "tests/finetune/test_lora.py",
     "tests/finetune/test_dpo.py",
     "tests/finetune/test_toy.py",
+    "tests/finetune/test_tool_sft.py",
+    "tests/finetune/test_tool_eval.py",
 )
 
 

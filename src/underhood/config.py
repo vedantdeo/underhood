@@ -78,6 +78,25 @@ TOY_TARGET_SETS: dict[str, tuple[str, ...]] = {
 }
 TOY_TARGET_SET = "qv"
 
+# Tool-use SFT for aigent's extract_figures (finetune.tool_sft): Qwen3-4B learns to call calculate.
+# LoRA on every projection, in fp16 for the T4; one pass over ~2,600 assistant turns is ~3 h there.
+TOOL_SFT_MODEL = "Qwen/Qwen3-4B"
+TOOL_SFT_QUANTIZE = True  # NF4 base on CUDA: fp16 LoRA ran out of the T4's 15 GB on step one
+TOOL_SFT_RANK = 16
+TOOL_SFT_ALPHA = 32
+TOOL_SFT_DROPOUT = 0.05
+TOOL_SFT_TARGETS = TOY_TARGET_SETS["all"]
+TOOL_SFT_EPOCHS = 1
+TOOL_SFT_LEARNING_RATE = 2e-4
+TOOL_SFT_BATCH = 1
+TOOL_SFT_ACCUM = 16
+TOOL_SFT_MAX_TOKENS = 2048  # a passage, the rules and the tool spec are ~1,400
+TOOL_SFT_WARMUP_RATIO = 0.03
+TOOL_SFT_EVAL_STEPS = 25
+TOOL_SFT_SAVE_STEPS = 25
+TOOL_EVAL_ROUNDS = 3  # a call, its answer, and one spare
+TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
+
 # GPT-2 small, loaded into your own GPT to prove the architecture matches Hugging Face's.
 GPT2_MODEL = "openai-community/gpt2"
 GPT2_CHECK_PROMPT = "The quick brown fox jumps over the lazy dog, and then"
@@ -109,19 +128,33 @@ GPU_EVAL_ITERS = 50
 GPU_CHECKPOINT_INTERVAL = 500
 GPU_COMPILE = True
 
-# Renting an A100: each offer's listed $/hr before tax, priced 2026-10-07, sorted by name.
+# Each offer's listed $/hr before tax, priced 2026-10-07, sorted by name; its card is in its name.
 GPU_OFFERS: dict[str, float] = {
     "jarvis-a100-40gb-ondemand": 0.89,  # added 2026-10-09: the first run's card, ₹84.24/hr with GST
     "jarvis-a100-80gb-ondemand": 1.49,
     "jarvis-a100-80gb-spot": 0.89,  # interruptible; the run resumes from its last checkpoint
+    "kaggle-t4": 0.0,  # free, about 30 GPU-hours a week, 12 h a session
     "lambda-a100-40gb": 1.99,
     "runpod-community-a100-80gb": 1.19,
     "runpod-secure-a100-80gb": 1.59,
 }
 GPU_OFFER = "jarvis-a100-40gb-ondemand"
 GPU_TAX = 0.18  # GST, which India levies on each of these
-GPU_PEAK_FLOPS = 312e12  # dense bf16
-GPU_MFU = 0.25  # share of the peak a 30M model reached on 2026-10-09: 306.6 ms/iter, evals included
+# Per card, sorted by name: the dense peak in the dtype it trains in, and the share a run gets.
+GPU_PEAK_FLOPS: dict[str, float] = {
+    "a100": 312e12,  # bf16
+    "t4": 65e12,  # fp16; a T4 has no bf16
+}
+GPU_MFU: dict[str, float] = {
+    "a100": 0.25,  # a 30M model on 2026-10-09: 306.6 ms/iter, evals included
+    "t4": 0.16,  # Kaggle, fp16, 2026-10-09: 2,297 ms/iter, evals included
+}
+
+# Free runs on Kaggle (gpu.kaggle), handing run folders back via the Hugging Face Hub (gpu.hub).
+KAGGLE_USER: str | None = "vedantdeo"  # or pass --user
+KAGGLE_ACCELERATOR = "NvidiaTeslaT4"
+KAGGLE_REPO_URL = "https://github.com/vedantdeo/underhood.git"
+HUB_RUNS_REPO = "underhood-runs"  # a private model repo under the logged-in Hub account
 
 # Loss-curve plots (training.curves). Categorical slots in assignment order, which is the data: do
 # not sort. A ninth run is refused rather than given a generated hue.

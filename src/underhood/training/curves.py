@@ -18,7 +18,7 @@ GPU_DIR = data.DATA_DIR / "gpu"
 
 
 class Row(NamedTuple):
-    """One evaluation: training.loop.Snapshot plus the seconds since the run began."""
+    """One evaluation: training.train.Snapshot plus the seconds since the run began."""
 
     iteration: int
     train_loss: float

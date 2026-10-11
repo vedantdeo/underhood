@@ -1,11 +1,12 @@
-"""What a run costs before it is rented: the time arithmetic, the bill, and each offer's rate."""
+"""What a run costs before it is rented: the time arithmetic, the bill, each offer's rate, and the
+card each offer rents."""
 
 from __future__ import annotations
 
 import pytest
 
 from underhood import config
-from underhood.gpu.pricing import estimated_seconds, hourly_usd, rental_usd
+from underhood.gpu.pricing import card, estimated_seconds, hourly_usd, rental_usd
 
 
 @pytest.mark.parametrize(
@@ -70,5 +71,45 @@ def test_the_default_offer_is_one_the_table_lists() -> None:
     assert config.GPU_OFFER in config.GPU_OFFERS
 
 
-def test_the_offers_stay_sorted_by_name() -> None:
-    assert list(config.GPU_OFFERS) == sorted(config.GPU_OFFERS), "one place for a new offer to go"
+@pytest.mark.parametrize(
+    "table",
+    [
+        pytest.param(config.GPU_OFFERS, id="the offers"),
+        pytest.param(config.GPU_PEAK_FLOPS, id="the cards' peaks"),
+        pytest.param(config.GPU_MFU, id="the cards' MFU"),
+    ],
+)
+def test_the_tables_stay_sorted_by_name(table: dict[str, float]) -> None:
+    assert list(table) == sorted(table), "one place for a new row to go"
+
+
+CARDS = {"a100": 312e12, "t4": 65e12}
+
+
+@pytest.mark.parametrize(
+    ("offer", "expected"),
+    [
+        pytest.param("runpod-community-a100-80gb", "a100", id="the card sits mid-name"),
+        pytest.param("kaggle-t4", "t4", id="the card ends the name"),
+    ],
+)
+def test_card(offer: str, expected: str) -> None:
+    assert card(offer, CARDS) == expected
+
+
+@pytest.mark.parametrize(
+    ("offer", "match"),
+    [
+        pytest.param("kaggle-p100", "no known card.*a100, t4", id="a card the table does not list"),
+        pytest.param("kaggle-a1000", "no known card", id="a card only inside another word"),
+        pytest.param("odd-a100-t4", "several", id="two cards in one offer"),
+    ],
+)
+def test_card_refuses_an_offer_it_cannot_place(offer: str, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        card(offer, CARDS)
+
+
+@pytest.mark.parametrize("offer", sorted(config.GPU_OFFERS))
+def test_every_offer_rents_a_card_with_a_peak_and_an_mfu(offer: str) -> None:
+    assert card(offer, config.GPU_PEAK_FLOPS) in config.GPU_MFU
