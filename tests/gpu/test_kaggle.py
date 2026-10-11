@@ -242,3 +242,73 @@ def test_the_cli_exits_with_the_reason_it_refused(
     with pytest.raises(SystemExit, match=match):
         kaggle.main()
     assert kaggle_cli.kaggle_calls() == []
+
+
+def test_the_metadata_attaches_the_datasets_it_is_given() -> None:
+    meta = kaggle.metadata("someone", "t4", ["someone/underhood-figures"])
+
+    assert meta["dataset_sources"] == ["someone/underhood-figures"]
+    assert kaggle.metadata("someone", "t4")["dataset_sources"] == []
+
+
+def test_push_attaches_its_datasets_to_the_kernel(tmp_path: Path) -> None:
+    cli = Cli()
+
+    folder = kaggle.push(
+        cli, "someone", "t4", "uv run x", "data/x", tmp_path, ["someone/underhood-figures"]
+    )
+
+    meta = json.loads((folder / "kernel-metadata.json").read_text())
+    assert meta["dataset_sources"] == ["someone/underhood-figures"]
+
+
+@pytest.mark.parametrize(
+    ("exists", "verb"),
+    [
+        pytest.param(False, ["create"], id="a new dataset is created private"),
+        pytest.param(True, ["version", "-m"], id="an existing one gets a new version"),
+    ],
+)
+def test_upload_creates_or_versions_a_private_dataset_of_the_folders_files(
+    exists: bool, verb: list[str], tmp_path: Path
+) -> None:
+    (tmp_path / "train.jsonl").write_text("{}\n")
+    cli = Cli({("kaggle", "datasets", "status"): (0 if exists else 1, "ready" if exists else "")})
+
+    ref = kaggle.upload(cli, "someone", "figures", tmp_path)
+
+    assert ref == "someone/underhood-figures"
+    meta = json.loads((tmp_path / "dataset-metadata.json").read_text())
+    assert (meta["id"], meta["title"]) == (ref, "underhood-figures")
+    sent = [c for c in cli.kaggle_calls() if c[2] != "status"][-1]
+    assert sent[:3] == ["kaggle", "datasets", verb[0]] and all(v in sent for v in verb)
+    assert ["-p", str(tmp_path)] == sent[sent.index("-p") : sent.index("-p") + 2]
+    assert "--public" not in sent and "-u" not in sent, "private"
+    assert ["-r", "skip"] == sent[sent.index("-r") : sent.index("-r") + 2], "files, not run folders"
+
+
+def test_upload_refuses_a_folder_with_no_files(tmp_path: Path) -> None:
+    (tmp_path / "run").mkdir()
+
+    with pytest.raises(ValueError, match="no files"):
+        kaggle.upload(Cli(), "someone", "figures", tmp_path)
+
+
+def test_the_cli_uploads_a_dataset_and_a_push_attaches_it(
+    kaggle_cli: Cli, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kaggle_cli.answers[("kaggle", "datasets", "status")] = (1, "")  # not uploaded before
+    data = tmp_path / "figures"
+    data.mkdir()
+    (data / "train.jsonl").write_text("{}\n")
+    monkeypatch.setattr("sys.argv", ["underhood-kaggle", "data", "figures", "--folder", str(data)])
+    kaggle.main()
+    monkeypatch.setattr(
+        "sys.argv",
+        ["underhood-kaggle", "push", "sft", "--command", "uv run x", "--dataset", "figures"],
+    )
+    kaggle.main()
+
+    meta = json.loads((tmp_path / "kaggle" / "sft" / "kernel-metadata.json").read_text())
+    assert meta["dataset_sources"] == ["someone/underhood-figures"]
+    assert any(c[:3] == ["kaggle", "datasets", "create"] for c in kaggle_cli.kaggle_calls())

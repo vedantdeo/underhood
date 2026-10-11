@@ -34,6 +34,7 @@ DEPENDENCY_ORDER = (
     "tests/finetune/test_lora.py",
     "tests/finetune/test_dpo.py",
     "tests/finetune/test_toy.py",
+    "tests/finetune/test_tool_sft.py",
 )
 
 

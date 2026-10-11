@@ -78,6 +78,22 @@ TOY_TARGET_SETS: dict[str, tuple[str, ...]] = {
 }
 TOY_TARGET_SET = "qv"
 
+# Tool-use SFT for aigent's extract_figures (finetune.tool_sft): Qwen3-4B learns to call calculate.
+# LoRA on every projection, in fp16 for the T4; one pass over ~2,600 assistant turns is ~3 h there.
+TOOL_SFT_MODEL = "Qwen/Qwen3-4B"
+TOOL_SFT_RANK = 16
+TOOL_SFT_ALPHA = 32
+TOOL_SFT_DROPOUT = 0.05
+TOOL_SFT_TARGETS = TOY_TARGET_SETS["all"]
+TOOL_SFT_EPOCHS = 1
+TOOL_SFT_LEARNING_RATE = 2e-4
+TOOL_SFT_BATCH = 1
+TOOL_SFT_ACCUM = 16
+TOOL_SFT_MAX_TOKENS = 2048  # a passage, the rules and the tool spec are ~1,400
+TOOL_SFT_WARMUP_RATIO = 0.03
+TOOL_SFT_EVAL_STEPS = 25
+TOOL_SFT_SAVE_STEPS = 25
+
 # GPT-2 small, loaded into your own GPT to prove the architecture matches Hugging Face's.
 GPT2_MODEL = "openai-community/gpt2"
 GPT2_CHECK_PROMPT = "The quick brown fox jumps over the lazy dog, and then"

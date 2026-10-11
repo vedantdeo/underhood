@@ -37,8 +37,9 @@ def slug(name: str) -> str:
     return f"underhood-{name}"
 
 
-def metadata(user: str, name: str) -> dict[str, object]:
-    """kernel-metadata.json for a private script kernel on a T4 with internet."""
+def metadata(user: str, name: str, datasets: Sequence[str] = ()) -> dict[str, object]:
+    """kernel-metadata.json for a private script kernel on a T4 with internet, with `datasets`
+    (`user/slug` refs) attached under /kaggle/input."""
     return {
         "id": f"{user}/{slug(name)}",
         "title": slug(name),
@@ -49,7 +50,7 @@ def metadata(user: str, name: str) -> dict[str, object]:
         "enable_gpu": True,
         "enable_internet": True,
         "machine_shape": config.KAGGLE_ACCELERATOR,
-        "dataset_sources": [],
+        "dataset_sources": list(datasets),
         "competition_sources": [],
         "kernel_sources": [],
         "model_sources": [],
@@ -84,9 +85,17 @@ def _pushed_commit(run: Runner) -> str:
     return sha
 
 
-def push(run: Runner, user: str, name: str, command: str, keep: str, out_dir: Path) -> Path:
+def push(
+    run: Runner,
+    user: str,
+    name: str,
+    command: str,
+    keep: str,
+    out_dir: Path,
+    datasets: Sequence[str] = (),
+) -> Path:
     """Write the kernel for this commit to out_dir/name and push it, which starts the run."""
-    meta = metadata(user, name)
+    meta = metadata(user, name, datasets)
     sha = _pushed_commit(run)
     folder = out_dir / name
     folder.mkdir(parents=True, exist_ok=True)
@@ -107,17 +116,33 @@ def pull(run: Runner, user: str, name: str, dest: Path) -> Path:
     return dest
 
 
+def upload(run: Runner, user: str, name: str, folder: Path) -> str:
+    """The files directly in `folder` as a private Kaggle dataset, created or given a new version;
+    its ref. Subfolders, such as a run's output, are skipped. ValueError for a folder with none."""
+    if not any(p.is_file() and p.name != "dataset-metadata.json" for p in folder.iterdir()):
+        raise ValueError(f"no files to upload in {folder}")
+    ref = f"{user}/{slug(name)}"
+    meta = {"title": slug(name), "id": ref, "licenses": [{"name": "other"}]}
+    (folder / "dataset-metadata.json").write_text(json.dumps(meta, indent=2) + "\n")
+    exists = run(["kaggle", "datasets", "status", ref]).returncode == 0
+    verb = ["version", "-m", "underhood upload"] if exists else ["create"]
+    _call(run, ["kaggle", "datasets", *verb, "-p", str(folder), "-r", "skip"])
+    return ref
+
+
 def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, capture_output=True, text=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run underhood on a free Kaggle T4.")
-    parser.add_argument("action", choices=["push", "status", "pull"])
+    parser.add_argument("action", choices=["push", "status", "pull", "data"])
     parser.add_argument("name", help="the run's name: its kernel, and data/gpu/<name> by default")
     parser.add_argument("--user", default=None, help="your Kaggle username; config.KAGGLE_USER")
     parser.add_argument("--command", default=None, help="what to run in the checkout")
     parser.add_argument("--keep", default=None, help="the folder to hand back")
+    parser.add_argument("--dataset", action="append", default=[], help="a dataset to attach")
+    parser.add_argument("--folder", type=Path, help="data: the folder to upload")
     args = parser.parse_args()
     user: str | None = args.user or config.KAGGLE_USER
     try:
@@ -129,10 +154,14 @@ def main() -> None:
                 "uv run underhood-fetch-tinystories && "
                 f"uv run underhood-train-gpu --gpu kaggle-t4 --name {name}"
             )
-            folder = push(
-                _run, user, name, command, args.keep or f"data/gpu/{name}", DATA_DIR / "kaggle"
-            )
+            keep = args.keep or f"data/gpu/{name}"
+            attached = [f"{user}/{slug(d)}" for d in args.dataset]
+            folder = push(_run, user, name, command, keep, DATA_DIR / "kaggle", attached)
             print(f"pushed {folder}; `underhood-kaggle status {name}` to follow it")
+        elif args.action == "data":
+            if args.folder is None:
+                raise ValueError("data needs --folder")
+            print(f"dataset {upload(_run, user, name, args.folder)}; attach with --dataset {name}")
         elif args.action == "status":
             print(status(_run, user, name))
         else:
