@@ -1,0 +1,191 @@
+{
+  "_about": "For tooldata.augment's company swap. `companies`: how each training report's company is written in its own text, matched case-insensitively, longest first; a form ending in Limited or Ltd becomes the new company's registered name, any other its short name. Bare 'Bajaj' and 'HDFC' are left out: they also name sister companies. `pool`: the companies a report may become, from aigent's NSE ticker directory less every company in either corpus, so never a test company; keyed and sorted by ticker.",
+  "companies": {
+    "Bajaj Auto Limited": [
+      "Bajaj Auto",
+      "Bajaj Auto Limited",
+      "Bajaj Auto Ltd"
+    ],
+    "HDFC Bank Limited": [
+      "HDFC Bank",
+      "HDFC Bank Limited",
+      "HDFC Bank Ltd"
+    ],
+    "Power Grid Corporation of India Limited": [
+      "POWERGRID",
+      "Power Grid",
+      "Power Grid Corporation of India",
+      "Power Grid Corporation of India Limited"
+    ],
+    "Sun Pharmaceutical Industries Limited": [
+      "Sun Pharma",
+      "Sun Pharmaceutical",
+      "Sun Pharmaceutical Industries",
+      "Sun Pharmaceutical Industries Limited",
+      "Sun Pharmaceuticals"
+    ],
+    "Wipro Limited": [
+      "Wipro",
+      "Wipro Limited",
+      "Wipro Ltd"
+    ]
+  },
+  "pool": {
+    "ADANIPORTS": {
+      "name": "Adani Ports and Special Economic Zone Limited",
+      "short": "Adani Ports"
+    },
+    "APOLLOHOSP": {
+      "name": "Apollo Hospitals Enterprise Limited",
+      "short": "Apollo Hospitals Enterprise"
+    },
+    "ASIANPAINT": {
+      "name": "Asian Paints Limited",
+      "short": "Asian Paints"
+    },
+    "AXISBANK": {
+      "name": "Axis Bank Limited",
+      "short": "Axis Bank"
+    },
+    "BAJFINANCE": {
+      "name": "Bajaj Finance Limited",
+      "short": "Bajaj Finance"
+    },
+    "BHARTIARTL": {
+      "name": "Bharti Airtel Limited",
+      "short": "Bharti Airtel"
+    },
+    "BIOCON": {
+      "name": "Biocon Limited",
+      "short": "Biocon"
+    },
+    "BRITANNIA": {
+      "name": "Britannia Industries Limited",
+      "short": "Britannia Industries"
+    },
+    "COALINDIA": {
+      "name": "Coal India Limited",
+      "short": "Coal India"
+    },
+    "DELHIVERY": {
+      "name": "Delhivery Limited",
+      "short": "Delhivery"
+    },
+    "DMART": {
+      "name": "Avenue Supermarts Limited",
+      "short": "Avenue Supermarts"
+    },
+    "DRREDDY": {
+      "name": "Dr. Reddy's Laboratories Limited",
+      "short": "Dr. Reddy's Laboratories"
+    },
+    "ETERNAL": {
+      "name": "Eternal Limited",
+      "short": "Zomato"
+    },
+    "HCLTECH": {
+      "name": "HCL Technologies Limited",
+      "short": "HCL Technologies"
+    },
+    "HEROMOTOCO": {
+      "name": "Hero MotoCorp Limited",
+      "short": "Hero MotoCorp"
+    },
+    "HINDALCO": {
+      "name": "Hindalco Industries Limited",
+      "short": "Hindalco Industries"
+    },
+    "HINDUNILVR": {
+      "name": "Hindustan Unilever Limited",
+      "short": "Hindustan Unilever"
+    },
+    "ICICIBANK": {
+      "name": "ICICI Bank Limited",
+      "short": "ICICI Bank"
+    },
+    "INDIGO": {
+      "name": "InterGlobe Aviation Limited",
+      "short": "InterGlobe Aviation"
+    },
+    "INFY": {
+      "name": "Infosys Limited",
+      "short": "Infosys"
+    },
+    "KOTAKBANK": {
+      "name": "Kotak Mahindra Bank Limited",
+      "short": "Kotak Mahindra Bank"
+    },
+    "LICI": {
+      "name": "Life Insurance Corporation of India",
+      "short": "LIC"
+    },
+    "LT": {
+      "name": "Larsen & Toubro Limited",
+      "short": "Larsen & Toubro"
+    },
+    "M&M": {
+      "name": "Mahindra & Mahindra Limited",
+      "short": "Mahindra & Mahindra"
+    },
+    "MARUTI": {
+      "name": "Maruti Suzuki India Limited",
+      "short": "Maruti Suzuki"
+    },
+    "NESTLEIND": {
+      "name": "Nestle India Limited",
+      "short": "Nestle India"
+    },
+    "NYKAA": {
+      "name": "FSN E-Commerce Ventures Limited",
+      "short": "FSN E-Commerce Ventures"
+    },
+    "OLAELEC": {
+      "name": "Ola Electric Mobility Limited",
+      "short": "Ola Electric Mobility"
+    },
+    "PAYTM": {
+      "name": "One 97 Communications Limited",
+      "short": "One 97 Communications"
+    },
+    "PVRINOX": {
+      "name": "PVR INOX Limited",
+      "short": "PVR INOX"
+    },
+    "SBICARD": {
+      "name": "SBI Cards and Payment Services Limited",
+      "short": "SBI Cards and Payment Services"
+    },
+    "SBIN": {
+      "name": "State Bank of India",
+      "short": "SBI"
+    },
+    "TATASTEEL": {
+      "name": "Tata Steel Limited",
+      "short": "Tata Steel"
+    },
+    "TCS": {
+      "name": "Tata Consultancy Services Limited",
+      "short": "Tata Consultancy Services"
+    },
+    "TECHM": {
+      "name": "Tech Mahindra Limited",
+      "short": "Tech Mahindra"
+    },
+    "TITAN": {
+      "name": "Titan Company Limited",
+      "short": "Titan Company"
+    },
+    "TRENT": {
+      "name": "Trent Limited",
+      "short": "Trent"
+    },
+    "ULTRACEMCO": {
+      "name": "UltraTech Cement Limited",
+      "short": "UltraTech Cement"
+    },
+    "VEDL": {
+      "name": "Vedanta Limited",
+      "short": "Vedanta"
+    }
+  }
+}

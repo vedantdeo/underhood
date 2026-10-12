@@ -29,6 +29,7 @@ underhood-quant-bench = "underhood.inference.quantization:main"
 underhood-toy-lora = "underhood.finetune.toy:main"
 underhood-tool-sft = "underhood.finetune.tool_sft:main"
 underhood-tool-eval = "underhood.finetune.tool_eval:main"
+underhood-tool-data = "underhood.tooldata.build:main"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
