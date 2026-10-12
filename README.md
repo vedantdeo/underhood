@@ -1,158 +1,95 @@
 # underhood
 
-The from-scratch half of the Entropic plan. Everything here is written by hand and checked against a
-reference implementation: your tokenizer against tiktoken, your attention against PyTorch's, later your
-GPT against its own loss curve and your LoRA against a before-and-after eval.
+LLM internals written from scratch, each checked against a reference implementation — and the
+fine-tuning of an open model for a real job in its sibling agent,
+[aigent](https://github.com/vedantdeo/aigent). Built over the same eight weeks, test-first: the
+specs come first and run in dependency order, so the suite always stops on the next thing to build.
 
-The plan is in `~/workspace/MLAI/ML/llm-engineer-roadmap.md` (Track B). Weekly log is the one in the
-aigent repo.
+## Built and verified
+
+| Module | What it is | Verified against |
+|---|---|---|
+| `tokenizer/bpe.py` | byte-pair encoding: training, encode, decode | round-trip tests; compression against tiktoken (`underhood-bpe-compare`) |
+| `model/attention.py` | causal masking, single- and multi-head attention, a KV cache | PyTorch's `scaled_dot_product_attention`; cached decoding equals one full forward |
+| `model/gpt.py` | a GPT: feed-forward, blocks, weight tying | cross-entropy at init, causality, its own loss curve |
+| `model/pretrained.py` | GPT-2's weights loaded into that GPT | Hugging Face's logits and loss (`underhood-gpt2-check`) |
+| `training/train.py`, `train_gpu.py` | the training loop; warmup-cosine, bf16 or scaled fp16 autocast, gradient accumulation, resumable checkpoints | loss curves on MPS, a T4 and an A100; a killed run resumed |
+| `inference/sampling.py` | temperature, top-k, top-p, generation | filter behaviour on known distributions; identical tokens with and without the cache |
+| `inference/quantization.py` | Llama 3.2 3B in bf16 against 8-, 6- and 4-bit | KL from bf16's next-token distributions: **q8 0.0007, q4 0.048**, at **3.4× the decode speed** for q4 |
+| `finetune/lora.py`, `dpo.py` | a LoRA layer; the DPO loss | gradient checks against autograd |
+| `finetune/toy.py` | a LoRA fine-tune with mlx-lm on synthetic headlines | Qwen3-1.7B (4-bit) from **11/50 to 41/50** on 50 hand-labelled real headlines |
+
+## Tool-use fine-tune
+
+aigent's `extract_figures` turns an annual-report passage into `{metric, value, unit, year}`
+records. Scaled amounts (`₹ 1,250 crore`) are where small models fail, so **Qwen3-4B is taught to
+call a calculator instead of doing the arithmetic** — trained on multi-turn conversations with real
+`<tool_call>` / `<tool_response>` blocks, the loss on the assistant turns only, each prompted exactly
+as at inference.
+
+| | base Qwen3-4B | v1 | v2 (augmented data) |
+|---|---|---|---|
+| cases passed (43, hand-labelled) | 3 | 26 | **28** |
+| valid JSON | 11 | 41 | **42** |
+| called `calculate` when needed | 0/22 | 12/22 | **17/22** |
+| called it when not needed | 0/21 | 1/21 | **0/21** |
+
+bf16 LoRA (rank 16, all projections) on a rented A30, about ₹40–80 a run; evaluated on a free Kaggle
+T4. Labels come from Claude through aigent, which owns every hosted-model call; this repo owns
+everything from there:
+
+- **[`tooldata/labels.py`](src/underhood/tooldata/labels.py)** refuses a label that could teach
+  something false: a scale the passage never names, a call that doesn't produce the value, a negative
+  the passage doesn't print as negative, a description not copied verbatim.
+- **[`tooldata/augment.py`](src/underhood/tooldata/augment.py)** makes copies that stay true by
+  construction — percentages rewritten consistently, years shifted, companies and currencies swapped,
+  the rupee written the seven ways the reports print it — doubling the training set.
+- **[`finetune/tool_sft.py`](src/underhood/finetune/tool_sft.py)** trains with PEFT and the
+  Transformers `Trainer`, with QLoRA and gradient checkpointing as flags;
+  **[`tool_eval.py`](src/underhood/finetune/tool_eval.py)** runs the tool loop for grading.
+
+The most useful result was not a score: a census of v2's mistakes on 484 cases, adjudicated by hand,
+found **half of them were label errors**, so the next round fixed the labels and the checks rather
+than the model. The test labels were tightened at the same time, and v3 is training on the result.
+
+## Shared tools
+
+[`tools/`](src/underhood/tools/) holds the calculator, sandboxed file reads and writes, and the
+guardrails (an injection fence, credential redaction) that aigent's agents run and the fine-tune
+trains against — standard library only, so aigent installs them without pulling in torch.
+
+## GPUs
+
+[`gpu/`](src/underhood/gpu/) prices a run before it is rented (estimated FLOPs, a card's peak and
+MFU, each provider's rate with GST), runs the pushed commit on a free Kaggle T4, and keeps run
+folders on the Hugging Face Hub so a run resumes across sessions. A side study: four fp16 runs of the
+same 30M-parameter model spread 0.07 in validation loss across identical seeds, so a single bf16 run
+0.04 away proved nothing. Runbook: [docs/gpu.md](docs/gpu.md).
 
 ## Setup
 
 ```bash
 uv sync
-uv run underhood-check      # picks MPS, times a matmul against CPU
-uv run underhood-fetch      # downloads tiny Shakespeare into data/ (git-ignored)
-uv run ptw . -x -q          # the working loop: stops on the next function to write
+uv run underhood-check      # picks the device, times a matmul
+uv run underhood-fetch      # tiny Shakespeare into data/ (git-ignored)
+uv run pytest -q            # the specs, in dependency order
 ```
 
-`uv sync` installs the `train` and `mlx` groups (torch, transformers, mlx-lm and the rest) by
-default. The package itself depends on nothing, so another project, such as aigent, can install it
-for `config` and `gpu/` alone and never pull in torch.
+The package itself depends on nothing; torch, transformers and mlx-lm come from the `train` and `mlx`
+dependency groups, which `uv sync` installs by default. Once a module is green its script does
+something: `underhood-bpe-compare`, `underhood-train`, `underhood-sample`, `underhood-kv-bench`,
+`underhood-quant-bench`, `underhood-tool-sft`, `underhood-tool-eval`, `underhood-tool-data`.
 
-The specs run in dependency order, not alphabetically, so `-x` always stops on the next thing to
-write rather than on whichever file sorts first. That order lives in `tests/conftest.py`.
-
-Once a module is green, its script does something:
-
-```bash
-uv run underhood-bpe-compare  # your tokenizer's compression against tiktoken's
-uv run underhood-train        # loss curve, ms/iter, and a checkpoint under data/
-uv run underhood-sample       # generate from that checkpoint
-uv run underhood-kv-bench     # what the cache is worth, then what batching is worth
-uv run underhood-quant-bench  # Llama 3.2 3B in bf16 against its own 8-, 6- and 4-bit conversions
-```
-
-## Editor
-
-`.vscode/` is committed, so the settings arrive with the clone; VS Code will offer the extensions on
-first open (Ruff, Python, Pylance) and everything below is already wired up.
-
-| On save | Does what |
-|---------|-----------|
-| `ruff format` | whitespace and layout, to the 100-char limit in `pyproject.toml` |
-| `source.fixAll.ruff` | every safe autofix, including removing unused imports |
-| `source.organizeImports.ruff` | sorts imports — the formatter does not do this |
-
-`ruff.importStrategy` is `fromEnvironment`, so the editor runs `.venv/bin/ruff` rather than the copy
-inside the extension. That is what keeps it reading `pyproject.toml`, and keeps the editor from
-disagreeing with `uv run ruff check`. Run `uv sync` before opening the folder or there is no ruff to
-find.
-
-Two things it will not do: rename a variable that shadows a builtin (`A001` is never a safe fix), and
-type-check — Pylance does that, and its warnings are signal, not noise. On another editor, point
-whatever you use at the same `.venv/bin/ruff` and you get the same behaviour.
-
-## How the weeks map
-
-The packages are named for what the code does, not for the week it was written in; this table is
-the only place the weeks appear.
-
-| Week | Module | You write | Verified against |
-|------|--------|-----------|------------------|
-| 1 | `tokenizer/bpe.py` | get_stats, merge, train, encode, decode | roundtrip tests, then tiktoken via `underhood-bpe-compare` |
-| 1 | `model/attention.py` | causal mask, single head, multi-head | `torch.nn.functional.scaled_dot_product_attention` |
-| 2 | `model/gpt.py` | FeedForward, Block, GPT | cross-entropy at init, causality, its own logits |
-| 2 | `training/train.py` | split, batches, loss estimate, the loop itself | loss curve on MPS |
-| 2 | `model/attention.py` | KVCache, and a mask that widens over cached keys | stepping through a cache matches one full forward |
-| 2 | `inference/sampling.py` | temperature, top-k, top-p, generate | filter behaviour on known distributions; the same tokens with a cache and without |
-| 3 | `inference/quantization.py` | bf16 against 8-, 6- and 4-bit conversions of the same checkpoint: TTFT, decode rate, memory | KL divergence from bf16's next-token distributions; the side-by-side outputs |
-| 4 | `finetune/lora.py`, `finetune/dpo.py` | LoRA layer; DPO loss | toy fine-tune eval; gradient check |
-| 5 | `model/pretrained.py` | GPT-2's bias and tanh-GELU switches; its weights renamed into yours | Hugging Face's logits and loss; greedy text via `underhood-gpt2-check` |
-| 5 | `training/train_gpu.py` | warmup-cosine lr, bf16 or scaled fp16 autocast, gradient accumulation, resumable checkpoints, the run | one big batch; a crashed run resumed; loss curve on an A100 vs MPS |
-
-Rules for this repo: write the implementation before reading the reference code, then read it and
-compare. Keep the tests as the spec; add a test before you extend an interface.
-
-## GPU day runbook
-
-Once `tests/training/test_train_gpu.py` is green, and only after the rental is approved:
-
-0. Locally, `uv run underhood-train-gpu --estimate`: minutes on an A100 at a guessed MFU and what
-   each offer in `config.GPU_OFFERS` charges for them with GST (`underhood.gpu.pricing`), nothing
-   fetched or trained. The default is Jarvis spot; pick another with `--gpu`. Bring the number to
-   the rental's go-ahead.
-1. Locally, `uv run underhood-train-gpu --max-iters 3 --micro-batch 8 --name mps` for MPS's ms/iter
-   on the same model (it needs `uv run underhood-fetch-tinystories` first, about 2.2 GB down).
-2. Rent one A100 (RunPod or Lambda) with a PyTorch image; clone this repo, `uv sync`.
-3. `uv run underhood-fetch-tinystories`, then `uv run underhood-train-gpu` inside `tmux`.
-   A preempted or killed run carries on from `data/gpu/tinystories/ckpt.pt` when started again.
-4. Copy back `data/gpu/tinystories/` (curve, settings, checkpoint), then stop the instance.
-
-## Snap and roll
-
-underhood is released together with aigent, by aigent's `.github/workflows/release.yml`, all or
-nothing. Twice a week, at Mon and Thu 00:07 IST (Sun and Wed 18:37 UTC; an odd minute, since
-GitHub runs schedules late at busy ones):
-
-- **snap** creates the branch `snap-YYYY-MM-DD` from `main` here, then aigent's, pinned to it. Each
-  repo keeps its last eight (a month).
-- **roll** runs this repo's `checks.yml` on its snap, and aigent's checks on its own.
-- **stable**, only if both pass, tags each snap `roll-YYYY-MM-DD`, dated the day it rolls, and
-  moves each repo's `stable` tag to it. If either fails, nothing moves in either repo.
-- **A fix after a red roll** lands on `main` first, then is cherry-picked onto the snap branch
-  (`git checkout snap-YYYY-MM-DD && git cherry-pick <sha> && git push`); then run aigent's release by
-  hand with step `repin`, which re-pins aigent's snap to it and rolls the pair again.
-- The **mains CI** (`main.yml`) runs `checks.yml` on `main`, and once green starts aigent's mains CI
-  against this `main`; aigent's `main` pins this `main` and, once green, locks the commit it passed
-  with. `checks.yml` checks out this repo by name, so aigent's release can call it.
-- `roll-…` and `stable` are tags on snap branches, not branches of their own.
+underhood is released together with aigent — snapped, checked as a pair and tagged `stable` twice a
+week; see aigent's [docs/development.md](https://github.com/vedantdeo/aigent/blob/main/docs/development.md).
+Questions parked for later measurement: [docs/open-questions.md](docs/open-questions.md).
 
 ## Layout
 
-- `src/underhood/config.py`     every tunable constant, in one place
-- `src/underhood/device.py`     device selection and the matmul check
-- `src/underhood/gpu/`         renting a GPU and what it costs; imports no torch, so a caller can price a run without loading it
-- `src/underhood/tools/`       calculate, sandboxed file reads and writes, and the guardrails (the fence, credential redaction) that aigent's agents run and the fine-tunes train with; standard library only
-- `src/underhood/data.py`       corpus download, and TinyStories as GPT-2 token ids
-- `src/underhood/tokenizer/`    BPE, and the comparison against tiktoken
-- `src/underhood/model/`        attention, the KV cache, the GPT that stacks them, and GPT-2's weights in it
-- `src/underhood/training/`     batching, the training loop, and the GPU-scale run
-- `src/underhood/inference/`    sampling, the benchmark that prices the KV cache, and quantization
-- `src/underhood/finetune/`     LoRA, the DPO loss, the mlx-lm toy fine-tune, and tool-use SFT and its eval loop for aigent's figures
-- `tests/`                      the specification, one file per module, run in dependency order
-
-## Questions parked for later
-
-Things worth measuring on your own model once it trains, rather than arguing about in advance.
-
-**How much does the positional path reach the logits?** With weight tying, `lm_head` is `tok_emb`
-transposed, so a logit picks up a term `e_v · p_t` — the dot product of a token embedding with a
-position embedding. That is a learned position-conditional prior over the vocabulary, which may be
-useful signal or may be leakage. Take a trained checkpoint, compute logits normally, then again
-from `h - pos_emb(t)`, and compare the two distributions: KL, or how often the top-1 token agrees.
-Near-total agreement means the path carries nothing at the output; 85% means it is doing real work
-and removing it would cost you.
-
-Subtracting it in `GPT.forward` is not obviously the fix either way — `ln_f` sits between the
-residual stream and `lm_head`, so subtracting before the norm gets partly undone by it, and
-subtracting after fights a scale mismatch. The architectures that took this seriously removed
-absolute position from the residual stream rather than taking it back out: RoPE rotates `q` and `k`
-inside attention and adds nothing to the stream (`reference/roformer-rope.pdf`), and NoPE drops
-positional encoding entirely, on the argument that a causal mask already implies order.
-
-**Is random-offset sampling worth its uneven coverage?** `get_batch` draws start offsets at random
-with replacement, so a token is visited a Poisson-distributed number of times — at 24 expected
-visits, most land between 14 and 34, and none of it is coordinated. A partitioned sampler would fix
-that: cut the training split into non-overlapping windows of `block_size`, shuffle them once per
-epoch, and every token is seen exactly once per pass. Divisibility then starts to matter, and you
-would truncate to a whole number of batches to drop the ragged one.
-
-What the current sampler buys in exchange is a mild free augmentation. A token appears at a
-different offset inside the window every time it is drawn, so it is predicted sometimes from three
-tokens of context and sometimes from a hundred — different tasks, same data. nanoGPT and Karpathy's
-lecture both sample randomly, which is why this repo does.
-
-The experiment: same seed, same config, swap only the sampler, compare validation curves. If
-partitioning wins, the augmentation was worth less than the coverage; if it loses, the reverse. One
-number either way, and nobody agrees on the answer in advance.
+- `src/underhood/config.py` — every tunable constant
+- `src/underhood/tokenizer/`, `model/`, `training/`, `inference/` — the from-scratch stack
+- `src/underhood/finetune/` — LoRA, DPO, the toy fine-tune, tool-use SFT and its eval loop
+- `src/underhood/tooldata/` — label checks, augmentation and the build for the tool-use fine-tune
+- `src/underhood/tools/` — the tools and guardrails aigent's agents use
+- `src/underhood/gpu/` — pricing, Kaggle and Hugging Face Hub runners; no torch
+- `tests/` — the specification, one file per module, run in dependency order

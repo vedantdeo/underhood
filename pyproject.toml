@@ -1,7 +1,7 @@
 [project]
 name = "underhood"
 version = "0.1.0"
-description = "The from-scratch half of the Entropic plan: tokenizers, attention, GPT, KV cache, LoRA, DPO."
+description = "LLM internals from scratch, each verified against a reference, and a tool-use fine-tune of Qwen3-4B."
 readme = "README.md"
 authors = [
     { name = "vedantdeo", email = "vedantdeo1@gmail.com" }
