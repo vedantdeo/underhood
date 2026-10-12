@@ -62,6 +62,13 @@ def test_build_writes_one_conversation_per_good_answer_and_drops_the_rest(
     built = build(rows, task, tmp_path, seed=0, how=STILL)
 
     assert (built.train, built.valid, built.dropped) == (1, 1, 3)
+    dropped = lines(tmp_path / "dropped.jsonl")
+    assert [d["question"] for d in dropped] == [
+        "a call that does not give the value",
+        "no figures",
+        "a figure missing fields",
+    ]
+    assert all(d["chunk_id"] == "AAA#0001" for d in dropped)
     for name in ("train", "valid"):
         (only,) = lines(tmp_path / f"{name}.jsonl")
         assert only["tools"] == [task.tool]

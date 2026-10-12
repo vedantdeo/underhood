@@ -169,8 +169,8 @@ def _printed_negative(number: float, passage: str) -> bool:
 
 def check_call(figure: Label, passage: str, change: str | None = None) -> bool:
     """Whether a label's value is the passage's own number, scaled by a scale the passage names or
-    made a fraction by its call, the call gives that value, and a negative is printed negative, or
-    is a `change` that is a fall."""
+    made a fraction by its call, the call gives that value (signed or not, for a negative), and a
+    negative is printed negative, or is a `change` that is a fall."""
     falls = change is not None and figure.description == change
     if figure.call is None:
         if figure.value < 0 and not falls and not _printed_negative(abs(figure.value), passage):
@@ -184,7 +184,10 @@ def check_call(figure: Label, passage: str, change: str | None = None) -> bool:
         return False
     if figure.value < 0 and not falls and not _printed_negative(number, passage):
         return False
-    return math.isclose(calculate(figure.call), figure.value, rel_tol=1e-9, abs_tol=1e-12)
+    result = calculate(figure.call)
+    if result < 0 and figure.value >= 0:
+        return False
+    return math.isclose(abs(result), abs(figure.value), rel_tol=1e-9, abs_tol=1e-12)
 
 
 def _fits(task: Task, figure: Label) -> bool:

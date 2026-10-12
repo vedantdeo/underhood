@@ -246,6 +246,20 @@ def test_a_scaled_call_needs_its_scale_named_in_the_passage(
         pytest.param("a net loss of ` 5 in the year", None, -5, False, id="a loss in words"),
         pytest.param("(5) last year and 5 this year", None, -5, True, id="printed negative once"),
         pytest.param("a profit of 5 in the year", None, 5, True, id="a positive needs nothing"),
+        pytest.param(
+            "a loss of (1,554.3) in crore",
+            "1554.3 * 10**7",
+            -15543000000,
+            True,
+            id="an unsigned call",
+        ),
+        pytest.param(
+            "a gain of 1,250 crore",
+            "-1250 * 10**7",
+            12500000000,
+            False,
+            id="a signed call, positive value",
+        ),
         pytest.param("margin in FY 2023-24 rose", None, -24, False, id="a year range is no minus"),
     ],
 )
