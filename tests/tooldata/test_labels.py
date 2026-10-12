@@ -59,13 +59,13 @@ def test_a_malformed_label_is_refused(raw: dict[str, object]) -> None:
 
 def test_the_task_loads_and_renders_the_prompt(tmp_path: Path) -> None:
     path = tmp_path / "task.json"
-    path.write_text(
-        json.dumps({"system": "rules", "user": USER, "tool": TOOL, "metrics": ["other"]})
-    )
+    exported = {"system": "rules", "user": USER, "tool": TOOL, "metrics": ["other"]}
+    path.write_text(json.dumps(exported | {"rate_metrics": ["margin"], "change": "change"}))
 
     loaded = load_task(path)
 
-    assert loaded.metrics == ("other",)
+    assert loaded.metrics == ("other",) and loaded.rate_metrics == ("margin",)
+    assert loaded.change == "change"
     assert loaded.messages("P {x}", "S", "W") == [
         {"role": "system", "content": "rules"},
         {
@@ -107,10 +107,24 @@ def test_check_call(figure: Label, ok: bool) -> None:
             labelled(1, None, "revenue", None, "staff"), False, id="a named metric with one"
         ),
         pytest.param(labelled(1, None, "revenue", None, None), True, id="a named metric without"),
+        pytest.param(
+            labelled(1, None, "revenue", None, "change"), True, id="a named metric's change"
+        ),
+        pytest.param(
+            labelled(1, None, "revenue", None, "growth"), False, id="change by another name"
+        ),
+        pytest.param(
+            labelled(1, None, "other", None, "staff 1,234; (1,554.3) loss"), True, id="five words"
+        ),
+        pytest.param(
+            labelled(1, None, "other", None, "margin 7.25%; staff 1,234; (1,554.3) loss"),
+            False,
+            id="six words",
+        ),
     ],
 )
 def test_described(figure: Label, ok: bool) -> None:
-    assert described(figure, TABLE) is ok
+    assert described(figure, TABLE, "change") is ok
 
 
 def test_a_transcript_makes_every_call_in_one_turn_then_answers(task: Task) -> None:
@@ -212,3 +226,65 @@ def test_a_scaled_call_needs_its_scale_named_in_the_passage(
     passage: str, call: str, value: float, ok: bool
 ) -> None:
     assert check_call(labelled(value, call), passage) is ok
+
+
+@pytest.mark.parametrize(
+    ("passage", "call", "value", "ok"),
+    [
+        pytest.param(
+            "a loss of (1,554.3) in crore", "-1554.3 * 10**7", -15543000000, True, id="parentheses"
+        ),
+        pytest.param("finance costs (` 33) in the year", None, -33, True, id="a glyph inside them"),
+        pytest.param("finance costs ` (33) in the year", None, -33, True, id="a glyph before them"),
+        pytest.param("margin fell to -5 crore", "-5 * 10**7", -50000000, True, id="a minus"),
+        pytest.param(
+            "change of −12.5% on the year", "-12.5 / 100", -0.125, True, id="a unicode minus"
+        ),
+        pytest.param(
+            "revenue declined by 31.75%", "-31.75 / 100", -0.3175, False, id="a fall in words"
+        ),
+        pytest.param("a net loss of ` 5 in the year", None, -5, False, id="a loss in words"),
+        pytest.param("(5) last year and 5 this year", None, -5, True, id="printed negative once"),
+        pytest.param("a profit of 5 in the year", None, 5, True, id="a positive needs nothing"),
+        pytest.param("margin in FY 2023-24 rose", None, -24, False, id="a year range is no minus"),
+    ],
+)
+def test_a_negative_value_needs_the_passage_to_print_it_negative(
+    passage: str, call: str | None, value: float, ok: bool
+) -> None:
+    figure = labelled(value, call, "profit", "INR")
+
+    assert check_call(figure, passage) is ok
+
+
+GROWTH = "Revenue grew 12% while margin was 8% and share 9%; revenue declined by 31.75% in Q1."
+
+
+@pytest.mark.parametrize(
+    ("figure", "taught"),
+    [
+        pytest.param(
+            labelled(0.12, "12 / 100", "revenue", None), False, id="a percentage as revenue"
+        ),
+        pytest.param(
+            labelled(0.12, "12 / 100", "revenue", None, "change"), True, id="revenue's change"
+        ),
+        pytest.param(labelled(0.08, "8 / 100", "margin", None), True, id="a margin"),
+        pytest.param(labelled(0.09, "9 / 100", "market_share", None), True, id="a market share"),
+        pytest.param(
+            labelled(0.12, "12 / 100", "other", None, "Revenue grew"), True, id="an other"
+        ),
+        pytest.param(
+            labelled(-0.3175, "-31.75 / 100", "revenue", None, "change"),
+            True,
+            id="a fall as a change",
+        ),
+        pytest.param(
+            labelled(-0.3175, "-31.75 / 100", "profit", None), False, id="a fall in words otherwise"
+        ),
+    ],
+)
+def test_a_percentage_is_a_rate_metric_a_change_or_other(
+    task: Task, figure: Label, taught: bool
+) -> None:
+    assert (transcript(task, GROWTH, "s", "w", [figure]) is not None) is taught

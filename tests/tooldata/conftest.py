@@ -6,14 +6,15 @@ import pytest
 
 from underhood.tooldata.labels import Label, Task
 
-METRICS = ("margin", "revenue", "debt", "volume", "employees", "other")
+METRICS = ("margin", "revenue", "profit", "debt", "market_share", "volume", "employees", "other")
+RATE_METRICS = ("margin", "market_share")
 TOOL: dict[str, object] = {"type": "function", "function": {"name": "calculate"}}
 USER = "<source>{source}</source>\n<passage>{passage}</passage>\n<wanted>{wanted}</wanted>"
 
 
 @pytest.fixture
 def task() -> Task:
-    return Task(system="rules", user=USER, tool=TOOL, metrics=METRICS)
+    return Task("rules", USER, TOOL, METRICS, RATE_METRICS, "change")
 
 
 def labelled(

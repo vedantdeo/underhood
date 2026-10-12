@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-from tests.tooldata.conftest import METRICS, TOOL
+from tests.tooldata.conftest import METRICS, RATE_METRICS, TOOL
 from underhood.tooldata import augment as figure_augment
 from underhood.tooldata.augment import (
     COMPANY_FORMS,
@@ -30,7 +30,7 @@ from underhood.tooldata.augment import (
 )
 from underhood.tooldata.labels import Label, Task, transcript
 
-TASK = Task("rules", "{source}|{passage}|{wanted}", TOOL, METRICS)
+TASK = Task("rules", "{source}|{passage}|{wanted}", TOOL, METRICS, RATE_METRICS, "change")
 
 PASSAGE = "The RE share rose from 30% in FY 2023-24 to 45% in FY 2024-25 across 12 plants."
 QUESTION = "How did the RE share move from 30%?"
