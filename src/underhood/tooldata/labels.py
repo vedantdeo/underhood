@@ -16,7 +16,14 @@ from underhood.tools.calc import calculate
 Message = dict[str, object]
 
 _CALL = re.compile(r"(-?\d+(?:\.\d+)?) (?:\* 10\*\*(\d+)|/ 100)")
-_POWERS = {3, 5, 6, 7, 9, 12}
+_SCALE_WORDS = {
+    3: r"thousands?|'000",
+    5: r"lakhs?|lacs?",
+    6: r"millions?|mn",
+    7: r"crores?|cr",
+    9: r"billions?|bn",
+    12: r"lakh\s+crores?|trillions?",
+}
 _PRINTED = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _NUMBER_WORDS = {
     name: i
@@ -130,13 +137,22 @@ def described(figure: Label, passage: str) -> bool:
     return squeeze(figure.description) in squeeze(passage)
 
 
+def _named(power: int, passage: str) -> bool:
+    """Whether the passage names the scale 10**power: a word for it, anywhere in the text."""
+    words = _SCALE_WORDS.get(power)
+    return (
+        words is not None
+        and re.search(rf"(?<![a-z])(?:{words})(?![a-z])", passage, re.I) is not None
+    )
+
+
 def check_call(figure: Label, passage: str) -> bool:
-    """Whether a label's value is the passage's own number, scaled by a real scale or made a
-    fraction by its call, and the call gives that value."""
+    """Whether a label's value is the passage's own number, scaled by a scale the passage names or
+    made a fraction by its call, and the call gives that value."""
     if figure.call is None:
         return abs(figure.value) in printed(passage)
     match = _CALL.fullmatch(figure.call.strip())
-    if match is None or (match.group(2) is not None and int(match.group(2)) not in _POWERS):
+    if match is None or (match.group(2) is not None and not _named(int(match.group(2)), passage)):
         return False
     if abs(float(match.group(1))) not in printed(passage):
         return False

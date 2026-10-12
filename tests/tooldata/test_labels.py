@@ -84,7 +84,7 @@ def test_the_task_loads_and_renders_the_prompt(tmp_path: Path) -> None:
         pytest.param(labelled(1234, None, "employees", None), True, id="printed in full"),
         pytest.param(labelled(10, None, "other", None, "ten"), True, id="a number word"),
         pytest.param(labelled(2871590000, "2871.59 * 10**7"), False, id="a call it does not give"),
-        pytest.param(labelled(2871590, "2871.59 * 10**3"), True, id="thousands"),
+        pytest.param(labelled(2871590, "2871.59 * 10**3"), False, id="thousands, never named"),
         pytest.param(labelled(28715900, "2871.59 * 10**4"), False, id="no such scale"),
         pytest.param(labelled(99990000000, "9999 * 10**7"), False, id="a number not printed"),
         pytest.param(labelled(2871.59, None), True, id="the bare cell, unscaled"),
@@ -160,3 +160,55 @@ def test_a_label_that_fails_a_check_teaches_nothing(task: Task, bad: Label) -> N
     good = labelled(1234, None, "employees", None)
 
     assert transcript(task, TABLE, "s", "w", [good, bad]) is None
+
+
+@pytest.mark.parametrize(
+    ("passage", "call", "value", "ok"),
+    [
+        pytest.param("Revenue (Rs in crore) 1,250", "1250 * 10**7", 12500000000, True, id="crore"),
+        pytest.param(
+            "Revenue 1,250 Crores", "1250 * 10**7", 12500000000, True, id="crores, any case"
+        ),
+        pytest.param("EBITDA K10,101 CR", "10101 * 10**7", 101010000000, True, id="CR"),
+        pytest.param("(` million) 4,500", "4500 * 10**6", 4500000000, True, id="million"),
+        pytest.param("USD 45 mn", "45 * 10**6", 45000000, True, id="mn"),
+        pytest.param("over 3 lakh people", "3 * 10**5", 300000, True, id="lakh"),
+        pytest.param("2 billion units", "2 * 10**9", 2000000000, True, id="billion"),
+        pytest.param(
+            "deposits of 2.5 lakh crore", "2.5 * 10**12", 2500000000000, True, id="lakh crore"
+        ),
+        pytest.param("(in thousands) 1,250", "1250 * 10**3", 1250000, True, id="thousands"),
+        pytest.param(
+            "Borrowings 110,466.1",
+            "110466.1 * 10**6",
+            110466100000,
+            False,
+            id="a scale no word names",
+        ),
+        pytest.param(
+            "Revenue (Rs in crore) 1,250",
+            "1250 * 10**6",
+            1250000000,
+            False,
+            id="million in a crore table",
+        ),
+        pytest.param(
+            "2.5 lakh and 3 crore", "2.5 * 10**12", 2500000000000, False, id="lakh and crore apart"
+        ),
+        pytest.param(
+            "(` million) 4,500", "4500 * 10**7", 45000000000, False, id="crore in a million table"
+        ),
+        pytest.param("growth of 12%", "12 / 100", 0.12, True, id="a percentage needs no word"),
+        pytest.param(
+            "credit of 1,250 in the column",
+            "1250 * 10**7",
+            12500000000,
+            False,
+            id="cr and mn inside other words",
+        ),
+    ],
+)
+def test_a_scaled_call_needs_its_scale_named_in_the_passage(
+    passage: str, call: str, value: float, ok: bool
+) -> None:
+    assert check_call(labelled(value, call), passage) is ok
