@@ -11,12 +11,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from underhood import config
 from underhood.tools.calc import calculate
 
 Message = dict[str, object]
 
 _CALL = re.compile(r"(-?\d+(?:\.\d+)?) (?:\* 10\*\*(\d+)|/ 100)")
-_POWERS = {3, 5, 6, 7, 9, 12}
+_SCALE_WORDS = {
+    3: r"thousands?|'000",
+    5: r"lakhs?|lacs?",
+    6: r"millions?|mn",
+    7: r"crores?|cr",
+    9: r"billions?|bn",
+    12: r"lakh\s+crores?|trillions?",
+}
 _PRINTED = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _NUMBER_WORDS = {
     name: i
@@ -28,6 +36,7 @@ _TYPOGRAPHY = str.maketrans(
     {c: "'" for c in "‘’‚‛′"} | {c: '"' for c in "“”„‟″"} | {c: "-" for c in "‐‑‒–—―"}
 )
 _SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,.;:!?%)\]])")
+_NEGATIVE_BEFORE = re.compile(r"(?:\(|(?<!\w)[-−–])\s*(?:[₹`A-Z]|Rs\.?)?\s*$")  # not 2023-24
 
 
 @dataclass(frozen=True)
@@ -85,12 +94,15 @@ def label(raw: Mapping[str, object]) -> Label:
 @dataclass(frozen=True)
 class Task:
     """What aigent exports about the task: the system prompt, the user turn as a template with
-    {source}, {passage} and {wanted}, the tool as chat templates take it, and the metrics."""
+    {source}, {passage} and {wanted}, the tool as chat templates take it, the metrics, the ones a
+    percentage may be, and the description a named metric's change carries."""
 
     system: str
     user: str
     tool: dict[str, object]
     metrics: tuple[str, ...]
+    rate_metrics: tuple[str, ...]
+    change: str
 
     def messages(self, passage: str, source: str, wanted: str) -> list[Message]:
         user = self.user.format(source=source, passage=passage, wanted=wanted)
@@ -105,6 +117,8 @@ def load_task(path: Path) -> Task:
         user=str(raw["user"]),
         tool=cast(dict[str, object], raw["tool"]),
         metrics=tuple(cast(list[str], raw["metrics"])),
+        rate_metrics=tuple(cast(list[str], raw["rate_metrics"])),
+        change=str(raw["change"]),
     )
 
 
@@ -121,36 +135,79 @@ def squeeze(text: str) -> str:
     return " ".join(closed.split()).casefold()
 
 
-def described(figure: Label, passage: str) -> bool:
-    """A description iff the metric is other, and then verbatim in the passage."""
+def described(figure: Label, passage: str, change: str) -> bool:
+    """A description iff the metric is other, and then a few words verbatim from the passage; on a
+    named metric, none, or `change` for a change in it."""
     if figure.metric != "other":
-        return figure.description is None
-    if not figure.description:
+        return figure.description in (None, change)
+    if (
+        not figure.description
+        or len(figure.description.split()) > config.TOOL_DATA_DESCRIPTION_WORDS
+    ):
         return False
     return squeeze(figure.description) in squeeze(passage)
 
 
-def check_call(figure: Label, passage: str) -> bool:
-    """Whether a label's value is the passage's own number, scaled by a real scale or made a
-    fraction by its call, and the call gives that value."""
+def _named(power: int, passage: str) -> bool:
+    """Whether the passage names the scale 10**power: a word for it, anywhere in the text."""
+    words = _SCALE_WORDS.get(power)
+    return (
+        words is not None
+        and re.search(rf"(?<![a-z])(?:{words})(?![a-z])", passage, re.I) is not None
+    )
+
+
+def _printed_negative(number: float, passage: str) -> bool:
+    """Whether the passage prints `number` negative somewhere: in parentheses or after a minus."""
+    for match in _PRINTED.finditer(passage):
+        if float(match.group().replace(",", "")) != number:
+            continue
+        if _NEGATIVE_BEFORE.search(passage[max(0, match.start() - 6) : match.start()]):
+            return True
+    return False
+
+
+def check_call(figure: Label, passage: str, change: str | None = None) -> bool:
+    """Whether a label's value is the passage's own number, scaled by a scale the passage names or
+    made a fraction by its call, the call gives that value (signed or not, for a negative), and a
+    negative is printed negative, or is a `change` that is a fall."""
+    falls = change is not None and figure.description == change
     if figure.call is None:
+        if figure.value < 0 and not falls and not _printed_negative(abs(figure.value), passage):
+            return False
         return abs(figure.value) in printed(passage)
     match = _CALL.fullmatch(figure.call.strip())
-    if match is None or (match.group(2) is not None and int(match.group(2)) not in _POWERS):
+    if match is None or (match.group(2) is not None and not _named(int(match.group(2)), passage)):
         return False
-    if abs(float(match.group(1))) not in printed(passage):
+    number = abs(float(match.group(1)))
+    if number not in printed(passage):
         return False
-    return math.isclose(calculate(figure.call), figure.value, rel_tol=1e-9, abs_tol=1e-12)
+    if figure.value < 0 and not falls and not _printed_negative(number, passage):
+        return False
+    result = calculate(figure.call)
+    if result < 0 and figure.value >= 0:
+        return False
+    return math.isclose(abs(result), abs(figure.value), rel_tol=1e-9, abs_tol=1e-12)
+
+
+def _fits(task: Task, figure: Label) -> bool:
+    """A metric the task names, and a percentage only as a rate metric, a change, or other."""
+    if figure.metric not in task.metrics:
+        return False
+    percentage = figure.call is not None and figure.call.strip().endswith("/ 100")
+    named = figure.metric != "other" and figure.metric not in task.rate_metrics
+    return not (percentage and named and figure.description != task.change)
 
 
 def transcript(
     task: Task, passage: str, source: str, wanted: str, labels: Sequence[Label]
 ) -> list[Message] | None:
     """The conversation that teaches one question, or None when any label fails `check_call`,
-    has a description the passage does not contain, or names a metric the task does not."""
-    if not all(check_call(f, passage) and described(f, passage) for f in labels):
+    is not `described`, names a metric the task does not, or is a percentage under a metric that
+    cannot be one."""
+    if not all(check_call(f, passage, task.change) for f in labels):
         return None
-    if any(f.metric not in task.metrics for f in labels):
+    if not all(described(f, passage, task.change) and _fits(task, f) for f in labels):
         return None
     calls = [f.call for f in labels if f.call is not None]
     messages = task.messages(passage, source, wanted)

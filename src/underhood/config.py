@@ -101,6 +101,7 @@ TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
 # Tool-use SFT data (tooldata.build): the share of chunks held out and the split's seed; rewritten
 # copies of a training answer with at least AUGMENT_LEAST labelled percentages; massaged copies of
 # every training answer, each step taken at MASSAGE_CHANCE, years moved by one of MASSAGE_SHIFTS.
+TOOL_DATA_DESCRIPTION_WORDS = 5  # the most words an other figure's description may have
 TOOL_DATA_VALID_FRACTION = 0.1
 TOOL_DATA_SEED = 0
 TOOL_DATA_AUGMENT_COPIES = 3

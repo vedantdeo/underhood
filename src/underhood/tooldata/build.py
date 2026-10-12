@@ -51,12 +51,13 @@ def build(
     """Every answered question as a conversation, split by chunk so a passage never sits on both
     sides, plus percentage rewrites and massaged copies (`how`, config's by default) of each
     training answer. An answer with no figures, a malformed one or one `transcript` refuses is
-    dropped; a copy `transcript` refuses is skipped."""
+    dropped and listed in out_dir/dropped.jsonl; a copy `transcript` refuses is skipped."""
     how = how or massage_settings()
     chunk_ids = sorted({str(row["chunk_id"]) for row in rows})
     held_out = round(len(chunk_ids) * config.TOOL_DATA_VALID_FRACTION)
     held = set(random.Random(seed).sample(chunk_ids, held_out))
     splits: dict[str, list[list[Message]]] = {"train": [], "valid": []}
+    refused: list[dict[str, str]] = []
     dropped = augmented = massaged_count = 0
     for row in rows:
         messages: list[Message] | None = None
@@ -70,6 +71,7 @@ def build(
             messages = None
         if not messages:
             dropped += 1
+            refused.append({"chunk_id": str(row["chunk_id"]), "question": str(row["question"])})
             continue
         if row["chunk_id"] in held:
             splits["valid"].append(messages)
@@ -101,6 +103,7 @@ def build(
         with (out_dir / f"{name}.jsonl").open("w", encoding="utf-8") as out:
             for messages in conversations:
                 out.write(json.dumps({"messages": messages, "tools": [task.tool]}) + "\n")
+    (out_dir / "dropped.jsonl").write_text("".join(json.dumps(r) + "\n" for r in refused))
     return Built(len(splits["train"]), len(splits["valid"]), dropped, augmented, massaged_count)
 
 
