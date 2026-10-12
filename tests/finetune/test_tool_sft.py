@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 import torch
+from safetensors.torch import load_file
 from transformers import BitsAndBytesConfig, Qwen3Config, Qwen3ForCausalLM
 
 from underhood.finetune.tool_sft import (
@@ -18,13 +19,17 @@ from underhood.finetune.tool_sft import (
     IGNORE,
     Encoded,
     Example,
+    Plan,
     Settings,
     encode,
     examples,
     lora,
     model_kwargs,
     pad,
+    peak_gb,
+    plan,
     precision,
+    prepare,
     train,
 )
 
@@ -211,3 +216,56 @@ def test_model_kwargs(
 )
 def test_precision(half: torch.dtype | None, flags: dict[str, bool]) -> None:
     assert precision(half) == flags
+
+
+@pytest.mark.parametrize(
+    ("cuda", "quantize", "checkpointing", "expected"),
+    [
+        pytest.param(False, True, True, Plan(False, False), id="no CUDA: neither"),
+        pytest.param(True, True, True, Plan(True, True), id="a T4 by default: QLoRA, checkpointed"),
+        pytest.param(True, False, True, Plan(False, True), id="an A30: bf16, checkpointed"),
+        pytest.param(True, False, False, Plan(False, False), id="an A100: bf16, all activations"),
+        pytest.param(True, True, False, Plan(True, False), id="QLoRA without checkpointing"),
+    ],
+)
+def test_plan(cuda: bool, quantize: bool, checkpointing: bool, expected: Plan) -> None:
+    assert plan(cuda, quantize, checkpointing) == expected
+
+
+def test_a_checkpointed_run_still_trains_the_adapters(tmp_path: Path) -> None:
+    model = prepare(tiny_qwen(), Plan(quantized=False, checkpointing=True))
+    rng = torch.Generator().manual_seed(2)
+    data = [
+        Encoded(ids := torch.randint(1, 64, (12,), generator=rng).tolist(), [IGNORE] * 6 + ids[6:])
+        for _ in range(4)
+    ]
+
+    train(model, 0, data, data[:1], tmp_path, Settings(batch=2, accum=1), 2, checkpointing=True)
+
+    saved = load_file(str(tmp_path / "adapter" / "adapter_model.safetensors"))
+    lora_b = [v for k, v in saved.items() if "lora_B" in k]
+    assert lora_b and any(v.abs().sum() > 0 for v in lora_b), "lora_B starts at zero; it moved"
+
+
+@pytest.mark.parametrize("checkpointing", [True, False], ids=["checkpointed", "not checkpointed"])
+def test_a_quantized_base_is_checkpointed_only_as_planned(checkpointing: bool) -> None:
+    base = tiny_qwen()
+    base.__dict__["is_loaded_in_4bit"] = True  # as bitsandbytes marks it; PEFT checks for it
+
+    model = prepare(base, Plan(quantized=True, checkpointing=checkpointing))
+
+    assert model.is_gradient_checkpointing is checkpointing
+
+
+@pytest.mark.parametrize(
+    ("cuda", "expected"),
+    [
+        pytest.param(False, None, id="no CUDA: nothing to report"),
+        pytest.param(True, 1.5, id="the most the allocator reserved, in GB"),
+    ],
+)
+def test_peak_gb(cuda: bool, expected: float | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda: 3 * 2**29)
+
+    assert peak_gb() == expected

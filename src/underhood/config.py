@@ -82,6 +82,7 @@ TOY_TARGET_SET = "qv"
 # LoRA on every projection, in fp16 for the T4; one pass over ~2,600 assistant turns is ~3 h there.
 TOOL_SFT_MODEL = "Qwen/Qwen3-4B"
 TOOL_SFT_QUANTIZE = True  # NF4 base on CUDA: fp16 LoRA ran out of the T4's 15 GB on step one
+TOOL_SFT_CHECKPOINTING = True  # recompute activations on CUDA; off only on a card with room
 TOOL_SFT_RANK = 16
 TOOL_SFT_ALPHA = 32
 TOOL_SFT_DROPOUT = 0.05
