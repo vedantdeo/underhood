@@ -13,6 +13,7 @@ import sys
 import pytest
 
 import underhood.gpu
+import underhood.tooldata
 import underhood.tools
 
 HEAVY = ("torch", "transformers", "mlx")
@@ -23,6 +24,11 @@ LIGHT = [
     *(f"underhood.gpu.{info.name}" for info in pkgutil.iter_modules(underhood.gpu.__path__)),
     "underhood.tools",
     *(f"underhood.tools.{info.name}" for info in pkgutil.iter_modules(underhood.tools.__path__)),
+    "underhood.tooldata",
+    *(
+        f"underhood.tooldata.{info.name}"
+        for info in pkgutil.iter_modules(underhood.tooldata.__path__)
+    ),
 ]
 
 

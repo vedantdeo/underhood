@@ -137,6 +137,13 @@ def lora(model: PreTrainedModel, settings: Settings) -> PeftModel:
     return adapted
 
 
+def peak_gb() -> float | None:
+    """The most GPU memory this process reserved, in GB, or None without CUDA."""
+    if not torch.cuda.is_available():
+        return None
+    return round(torch.cuda.max_memory_reserved() / 2**30, 2)
+
+
 def train(
     model: PreTrainedModel,
     pad_id: int,
@@ -193,6 +200,9 @@ def train(
         "train_examples": len(train_set),
         "valid_examples": len(valid_set),
     }
+    peak = peak_gb()
+    if peak is not None:
+        metrics["peak_gb"] = peak
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     return metrics
 
@@ -211,6 +221,30 @@ def model_kwargs(half: torch.dtype | None, quantize: bool) -> dict[str, object]:
         bnb_4bit_use_double_quant=True,
     )
     return {"dtype": half, "quantization_config": nf4}
+
+
+@dataclass(frozen=True)
+class Plan:
+    """How a run holds the model: a 4-bit base, and activations recomputed in the backward pass."""
+
+    quantized: bool
+    checkpointing: bool
+
+
+def plan(cuda: bool, quantize: bool, checkpointing: bool) -> Plan:
+    """What `--quantize` and `--checkpointing` mean on this machine: neither without CUDA."""
+    return Plan(quantized=cuda and quantize, checkpointing=cuda and checkpointing)
+
+
+def prepare(model: PreTrainedModel, how: Plan) -> PreTrainedModel:
+    """The loaded base made ready for LoRA under `how`: a 4-bit base readied for training, with
+    checkpointing as planned; a half-precision base as loaded, the Trainer checkpointing it."""
+    if how.quantized:
+        return cast(
+            PreTrainedModel,
+            prepare_model_for_kbit_training(model, use_gradient_checkpointing=how.checkpointing),
+        )
+    return model
 
 
 def precision(half: torch.dtype | None) -> dict[str, bool]:
@@ -234,6 +268,12 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=config.TOOL_SFT_QUANTIZE,
         help="a 4-bit base (QLoRA), for a card that cannot hold the base in half precision",
+    )
+    parser.add_argument(
+        "--checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=config.TOOL_SFT_CHECKPOINTING,
+        help="recompute activations in the backward pass: slower, far less memory",
     )
     args = parser.parse_args()
 
@@ -262,13 +302,11 @@ def main() -> None:
 
     cuda = torch.cuda.is_available()
     half = autocast_dtype(torch.device("cuda")) if cuda else None
-    quantized = cuda and bool(args.quantize)
-    print(f"half precision {half}, quantized {quantized}")
-    model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs(half, quantized))
-    if quantized:
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-    elif cuda:
-        model.enable_input_require_grads()  # checkpointing needs grads at the frozen embeddings
+    how = plan(cuda, bool(args.quantize), bool(args.checkpointing))
+    print(f"half precision {half}, quantized {how.quantized}, checkpointing {how.checkpointing}")
+    loaded = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs(half, how.quantized))
+    model = prepare(cast(PreTrainedModel, loaded), how)
+    print(f"attention {model.config._attn_implementation}")
     args.out.mkdir(parents=True, exist_ok=True)
     pad_id = int(tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0)
     metrics = train(
@@ -280,7 +318,7 @@ def main() -> None:
         Settings(),
         args.max_steps,
         half=half,
-        checkpointing=cuda,  # bf16 LoRA without it filled all 24 GB of an A30
+        checkpointing=how.checkpointing,
     )
     print(json.dumps(metrics, indent=2))
 

@@ -82,6 +82,7 @@ TOY_TARGET_SET = "qv"
 # LoRA on every projection, in fp16 for the T4; one pass over ~2,600 assistant turns is ~3 h there.
 TOOL_SFT_MODEL = "Qwen/Qwen3-4B"
 TOOL_SFT_QUANTIZE = True  # NF4 base on CUDA: fp16 LoRA ran out of the T4's 15 GB on step one
+TOOL_SFT_CHECKPOINTING = True  # recompute activations on CUDA; off only on a card with room
 TOOL_SFT_RANK = 16
 TOOL_SFT_ALPHA = 32
 TOOL_SFT_DROPOUT = 0.05
@@ -96,6 +97,17 @@ TOOL_SFT_EVAL_STEPS = 25
 TOOL_SFT_SAVE_STEPS = 25
 TOOL_EVAL_ROUNDS = 3  # a call, its answer, and one spare
 TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
+
+# Tool-use SFT data (tooldata.build): the share of chunks held out and the split's seed; rewritten
+# copies of a training answer with at least AUGMENT_LEAST labelled percentages; massaged copies of
+# every training answer, each step taken at MASSAGE_CHANCE, years moved by one of MASSAGE_SHIFTS.
+TOOL_DATA_VALID_FRACTION = 0.1
+TOOL_DATA_SEED = 0
+TOOL_DATA_AUGMENT_COPIES = 3
+TOOL_DATA_AUGMENT_LEAST = 2
+TOOL_DATA_MASSAGE_COPIES = 1
+TOOL_DATA_MASSAGE_CHANCE = 0.5
+TOOL_DATA_MASSAGE_SHIFTS = (-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 1, 2)
 
 # GPT-2 small, loaded into your own GPT to prove the architecture matches Hugging Face's.
 GPT2_MODEL = "openai-community/gpt2"

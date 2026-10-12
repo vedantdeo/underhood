@@ -34,6 +34,22 @@ rename. A bug fix is not a feature either, but it brings the test that would hav
 This section is mirrored verbatim into each project's tracked `CLAUDE.md`, so it survives the loss
 of this machine. Edit both, or neither.
 
+## Fine-tuning lives in underhood; model calls live in aigent
+
+**The rule (2026-10-12):** everything that trains or prepares training for a model lives in
+underhood. Every call to a hosted LLM goes through aigent. aigent grades.
+
+- **underhood:** label validation, augmentation, building conversations and the train/valid split
+  (`underhood.tooldata`), training, inference on our own models, and the GPU and Kaggle machinery.
+- **aigent:** the task (schema, prompt, tool, grader), labelling with Claude through `llm/` and its
+  budgets, the test sets, grading predictions and the fault census.
+- **The seam:** aigent exports plain JSON (`answers.jsonl`, `task.json`) for underhood to build
+  from. underhood writes predictions for aigent to grade. underhood never imports aigent, and has
+  no grader of its own.
+
+**Why:** one place per concern. Paid calls stay behind the machinery built to admit them, and a
+fine-tune is scored by the same grader as the agent that uses it.
+
 ## `main` only takes pull requests
 
 Since 2026-10-09 this repo and aigent are public, and `main` in each is guarded by a ruleset, "main
