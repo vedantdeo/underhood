@@ -47,9 +47,11 @@ class Model:
     def __init__(self, *replies: str) -> None:
         self.replies = list(replies)
         self.seen: list[list[Message]] = []
+        self.tools: list[list[Message]] = []
 
     def __call__(self, messages: Sequence[Message], tools: Sequence[Message]) -> str:
         self.seen.append(list(messages))
+        self.tools.append(list(tools))
         return self.replies.pop(0)
 
 
@@ -59,6 +61,15 @@ def test_a_direct_answer_is_final_with_no_calls() -> None:
     out = answer(ROW, model, rounds=3)
 
     assert out == {"id": "fg-1", "final": FINAL, "calls": [], "error": None}
+
+
+def test_a_row_with_no_tools_is_answered_with_none_offered() -> None:
+    model = Model('{"company": "Biocon"}')
+    headline = {"id": "hl-001", "messages": ROW["messages"]}
+
+    out = answer(headline, model, rounds=3)
+
+    assert out["final"] == '{"company": "Biocon"}' and model.tools == [[]]
 
 
 def test_a_call_is_run_and_its_result_shown_before_the_answer() -> None:

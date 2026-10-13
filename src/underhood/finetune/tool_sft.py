@@ -1,10 +1,12 @@
 """Tool-use SFT: Qwen3 learns, from aigent's extract_figures conversations, to call calculate for a
-scaled amount and answer in JSON. One example per assistant turn, its prompt rendered exactly as at
-inference; the loss falls on that turn alone. LoRA through PEFT in mixed precision, bf16 from Ampere
+scaled amount and answer in JSON; with --task headlines, the headline reader's tool-less rows.
+One example per assistant turn, its prompt rendered exactly as at inference; the loss falls on that
+turn alone. LoRA through PEFT in mixed precision, bf16 from Ampere
 on and fp16 before it; with --quantize (the default) a QLoRA run on a 4-bit base, for a T4.
 
 uv run underhood-tool-sft --data data/figures --out data/figures/run          # the run
 uv run underhood-tool-sft --data data/figures --out /tmp/smoke --max-steps 2  # a smoke run
+uv run underhood-tool-sft --task headlines --data data/toy-headlines --out data/headlines-4b/run
 
 The conversations come from aigent: python -m aigent.extraction.figure_training build.
 """
@@ -56,7 +58,7 @@ def examples(conversation: Mapping[str, object], render: Render) -> list[Example
     assistant opening in the conversation up to that turn, less the empty think block the
     generation prompt already opened. Raises ValueError for a template with no assistant opening."""
     messages = cast(list[Message], conversation["messages"])
-    tools = cast(list[Message], conversation["tools"])
+    tools = cast(list[Message], conversation.get("tools", []))
     out: list[Example] = []
     for i, message in enumerate(messages):
         if message["role"] != "assistant":
@@ -116,6 +118,19 @@ class Settings:
     warmup_ratio: float = config.TOOL_SFT_WARMUP_RATIO
     eval_steps: int = config.TOOL_SFT_EVAL_STEPS
     save_steps: int = config.TOOL_SFT_SAVE_STEPS
+    keep_best: bool = False  # end on the checkpoint with the lowest eval loss, not the last
+
+
+TASKS = {
+    "figures": Settings(),
+    "headlines": Settings(
+        epochs=config.HEADLINE_SFT_EPOCHS,
+        accum=config.HEADLINE_SFT_ACCUM,
+        eval_steps=config.HEADLINE_SFT_EVAL_STEPS,
+        save_steps=config.HEADLINE_SFT_EVAL_STEPS,
+        keep_best=True,
+    ),
+}
 
 
 def lora(model: PreTrainedModel, settings: Settings) -> PeftModel:
@@ -154,32 +169,12 @@ def train(
     max_steps: int | None = None,
     half: torch.dtype | None = None,
     checkpointing: bool = False,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | str]:
     """LoRA-train `model` in `half` mixed precision, resuming from a checkpoint under `out` when
     there is one, then save the adapter to out/adapter and the run's numbers to out/metrics.json."""
     adapted = lora(model, settings)
     checkpoints = out / "checkpoints"
-    flags = precision(half)
-    args = TrainingArguments(
-        output_dir=str(checkpoints),
-        per_device_train_batch_size=settings.batch,
-        per_device_eval_batch_size=settings.batch,
-        gradient_accumulation_steps=settings.accum,
-        learning_rate=settings.learning_rate,
-        num_train_epochs=settings.epochs,
-        max_steps=max_steps if max_steps is not None else -1,
-        warmup_steps=settings.warmup_ratio,  # a float under 1 is a share of the steps
-        logging_steps=5,
-        eval_strategy="steps",
-        eval_steps=settings.eval_steps,
-        save_steps=settings.save_steps,
-        save_total_limit=2,
-        bf16=flags["bf16"],
-        fp16=flags["fp16"],
-        gradient_checkpointing=checkpointing,
-        report_to=[],
-        remove_unused_columns=False,
-    )
+    args = arguments(settings, checkpoints, max_steps, half, checkpointing)
     trainer = Trainer(
         model=adapted,
         args=args,
@@ -192,7 +187,7 @@ def train(
     result = trainer.train(resume_from_checkpoint=resume or None)
     evaluated = trainer.evaluate()
     adapted.save_pretrained(str(out / "adapter"))
-    metrics: dict[str, float | int] = {
+    metrics: dict[str, float | int | str] = {
         "steps": result.global_step,
         "train_loss": result.training_loss,
         "eval_loss": evaluated["eval_loss"],
@@ -200,11 +195,48 @@ def train(
         "train_examples": len(train_set),
         "valid_examples": len(valid_set),
     }
+    if settings.keep_best and trainer.state.best_model_checkpoint is not None:
+        metrics["best_checkpoint"] = Path(trainer.state.best_model_checkpoint).name
     peak = peak_gb()
     if peak is not None:
         metrics["peak_gb"] = peak
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     return metrics
+
+
+def arguments(
+    settings: Settings,
+    checkpoints: Path,
+    max_steps: int | None = None,
+    half: torch.dtype | None = None,
+    checkpointing: bool = False,
+) -> TrainingArguments:
+    """The Trainer's arguments for a run under `settings`; keep_best saves at every evaluation and
+    reloads the lowest eval loss at the end."""
+    flags = precision(half)
+    return TrainingArguments(
+        output_dir=str(checkpoints),
+        per_device_train_batch_size=settings.batch,
+        per_device_eval_batch_size=settings.batch,
+        gradient_accumulation_steps=settings.accum,
+        learning_rate=settings.learning_rate,
+        num_train_epochs=settings.epochs,
+        max_steps=max_steps if max_steps is not None else -1,
+        warmup_steps=settings.warmup_ratio,  # a float under 1 is a share of the steps
+        logging_steps=5,
+        eval_strategy="steps",
+        eval_steps=settings.eval_steps,
+        save_steps=settings.eval_steps if settings.keep_best else settings.save_steps,
+        save_total_limit=2,
+        load_best_model_at_end=settings.keep_best,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        bf16=flags["bf16"],
+        fp16=flags["fp16"],
+        gradient_checkpointing=checkpointing,
+        report_to=[],
+        remove_unused_columns=False,
+    )
 
 
 def model_kwargs(half: torch.dtype | None, quantize: bool) -> dict[str, object]:
@@ -259,6 +291,7 @@ def load(path: Path) -> list[dict[str, object]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Teach Qwen3 to call calculate for figures.")
+    parser.add_argument("--task", choices=sorted(TASKS), default="figures", help="the settings")
     parser.add_argument("--data", type=Path, required=True, help="holds train.jsonl, valid.jsonl")
     parser.add_argument("--out", type=Path, required=True, help="run folder: adapter, metrics")
     parser.add_argument("--model", default=config.TOOL_SFT_MODEL)
@@ -315,7 +348,7 @@ def main() -> None:
         sets["train"],
         sets["valid"],
         args.out,
-        Settings(),
+        TASKS[args.task],
         args.max_steps,
         half=half,
         checkpointing=how.checkpointing,

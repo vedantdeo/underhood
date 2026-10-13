@@ -95,6 +95,10 @@ TOOL_SFT_MAX_TOKENS = 2048  # a passage, the rules and the tool spec are ~1,400
 TOOL_SFT_WARMUP_RATIO = 0.03
 TOOL_SFT_EVAL_STEPS = 25
 TOOL_SFT_SAVE_STEPS = 25
+# The headline reader on the same trainer (`--task headlines`): 180 template rows, best checkpoint
+HEADLINE_SFT_EPOCHS = 2
+HEADLINE_SFT_ACCUM = 4
+HEADLINE_SFT_EVAL_STEPS = 15  # a third of an epoch
 TOOL_EVAL_ROUNDS = 3  # a call, its answer, and one spare
 TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
 

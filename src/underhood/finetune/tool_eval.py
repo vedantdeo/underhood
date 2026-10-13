@@ -67,7 +67,7 @@ def answer(row: Mapping[str, object], generate: Generate, rounds: int) -> dict[s
     """One case through the loop: generate, run any calls and show their results, and stop at the
     first reply with no call. A model still calling after `rounds` replies has no answer."""
     messages = list(cast(list[Message], row["messages"]))
-    tools = cast(list[Message], row["tools"])
+    tools = cast(list[Message], row.get("tools", []))
     made: list[str] = []
     for _ in range(rounds):
         reply = generate(messages, tools)

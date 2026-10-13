@@ -50,6 +50,17 @@ underhood. Every call to a hosted LLM goes through aigent. aigent grades.
 **Why:** one place per concern. Paid calls stay behind the machinery built to admit them, and a
 fine-tune is scored by the same grader as the agent that uses it.
 
+## Jobs that finish live in underhood; servers that stay up live in hostllm
+
+**The rule (2026-10-13):** underhood runs work that ends — training, evals, censuses — and the
+compute for it (`underhood.gpu`: Kaggle kernels, the Hub, run pricing). hostllm runs servers that
+stay up: the engine, its deployments (Modal, JarvisLabs Serverless) and their benchmarks. underhood
+publishes adapters and names what to host; hostllm imports nothing from it.
+
+**Why:** a batch kernel that runs once and exits shares little with an endpoint that starts on
+demand, keeps weights warm and is measured under load. If hostllm later needs part of
+`underhood.gpu`, lift out that generic part then, shaped by a real second user.
+
 ## `main` only takes pull requests
 
 Since 2026-10-09 this repo and aigent are public, and `main` in each is guarded by a ruleset, "main
