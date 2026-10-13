@@ -1,12 +1,17 @@
-"""What a run takes on a rented GPU, in seconds and dollars, from the rates in config.
+"""What a run takes on a rented GPU, in seconds and dollars, from the rates in config, and what a
+call to a specialist hostllm serves costs, at the per-token price hostllm measured.
 
 The tests in tests/gpu/test_pricing.py are the specification: estimated_seconds, rental_usd,
-hourly_usd, then card.
+served_usd, hourly_usd, then card.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+
+from hostllm.pricing import SERVED, TokenPrice
+
+__all__ = ["SERVED", "card", "estimated_seconds", "hourly_usd", "rental_usd", "served_usd"]
 
 
 def estimated_seconds(params: int, tokens: int, peak_flops: float, mfu: float) -> float:
@@ -22,6 +27,11 @@ def estimated_seconds(params: int, tokens: int, peak_flops: float, mfu: float) -
 def rental_usd(seconds: float, usd_per_hour: float) -> float:
     """What `seconds` of a GPU rented at `usd_per_hour` costs."""
     return seconds / 3600 * usd_per_hour
+
+
+def served_usd(input_tokens: int, output_tokens: int, price: TokenPrice = SERVED) -> float:
+    """What a call costs at `price`, which is per million tokens: hostllm's own unless given."""
+    return (input_tokens * price.input + output_tokens * price.output) / 1e6
 
 
 def hourly_usd(offer: str, rates: Mapping[str, float], tax: float) -> float:
