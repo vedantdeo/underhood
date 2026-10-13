@@ -1,4 +1,4 @@
-# The mains CI: underhood's main, then, once green, aigent's main against it.
+# The mains CI: underhood's main, then aigent's against it, on a push or on hostllm's dispatch.
 name: mains
 
 on:
@@ -19,7 +19,7 @@ jobs:
   aigent:
     name: start aigent's mains CI
     needs: mains
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Run aigent's main against this main
