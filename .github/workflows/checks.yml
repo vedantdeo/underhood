@@ -9,6 +9,10 @@ on:
         description: the commit to check, instead of the one that started the run
         type: string
         default: ""
+      hostllm:
+        description: a hostllm ref to test against instead of the one uv.lock pins
+        type: string
+        default: ""
     secrets:
       token:
         description: a token that can read underhood, for a caller in another repo
@@ -34,21 +38,30 @@ jobs:
       - name: Install the locked environment
         run: uv sync --locked
 
+      # Every later step runs with --no-sync, which would otherwise put the locked hostllm back.
+      - name: Swap in hostllm ${{ inputs.hostllm }}
+        if: inputs.hostllm != ''
+        env:
+          REF: ${{ inputs.hostllm }}
+        run: |
+          uv pip install --reinstall "hostllm @ git+https://github.com/vedantdeo/hostllm@$REF"
+          echo "checking against hostllm $REF"
+
       - name: ruff · lint
-        run: uv run ruff check --output-format=github .
+        run: uv run --no-sync ruff check --output-format=github .
 
       - name: ruff · format
         if: ${{ !cancelled() }}
-        run: uv run ruff format --check .
+        run: uv run --no-sync ruff format --check .
 
       # The two mlx modules cannot resolve mlx on Linux; the Mac checks them.
       - name: pyright
         if: ${{ !cancelled() }}
         run: >-
-          uv run pyright $(git ls-files 'src/*.py' 'tests/*.py'
+          uv run --no-sync pyright $(git ls-files 'src/*.py' 'tests/*.py'
           | grep -v -e 'finetune/toy.py' -e 'inference/quantization.py'
           -e 'test_toy.py' -e 'test_quantization.py')
 
       - name: pytest
         if: ${{ !cancelled() }}
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
