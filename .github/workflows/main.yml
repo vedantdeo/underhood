@@ -1,4 +1,5 @@
-# The mains CI: underhood's main, then aigent's against it, on a push or on hostllm's dispatch.
+# The mains CI: underhood's main against hostllm's main as it is when the run starts, then aigent's
+# against it, on a push or on hostllm's dispatch.
 name: mains
 
 on:
@@ -14,6 +15,8 @@ concurrency:
 jobs:
   mains:
     uses: ./.github/workflows/checks.yml
+    with:
+      hostllm: main
 
   # AIGENT_DISPATCH_TOKEN: fine-grained, aigent only, Actions read and write, so it starts runs only.
   aigent:
