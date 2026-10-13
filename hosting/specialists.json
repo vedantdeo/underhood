@@ -1,0 +1,8 @@
+{
+  "adapters": {
+    "headline-flavour": "vistack/headline-flavour",
+    "report-analyst": "vistack/report-analyst"
+  },
+  "base_model": "Qwen/Qwen3-4B",
+  "max_lora_rank": 16
+}

@@ -42,6 +42,7 @@ DEPENDENCY_ORDER = (
     "tests/finetune/test_toy.py",
     "tests/finetune/test_tool_sft.py",
     "tests/finetune/test_tool_eval.py",
+    "tests/hosting/test_specialists.py",
 )
 
 
