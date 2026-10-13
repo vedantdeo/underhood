@@ -45,6 +45,34 @@ class Cli:
         return [call for call in self.calls if call[0] == "kaggle"]
 
 
+OLD, NEW = "2001-01-01 00:00:00.000000", "2999-01-01 00:00:00.000000"
+
+
+def listing(*files: tuple[str, int, str]) -> str:
+    """`kaggle datasets files -v`: the current version's files as CSV."""
+    return "name,size,creationDate\n" + "".join(f"{n},{size},{when}\n" for n, size, when in files)
+
+
+class DatasetCli(Cli):
+    """A Cli for one dataset: whether it exists, then its file listings from a queue, the last one
+    repeating."""
+
+    def __init__(self, exists: bool, listings: list[str]) -> None:
+        super().__init__({("kaggle", "datasets", "status"): (0, "ready") if exists else (1, "")})
+        self.listings = listings
+
+    def __call__(self, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        if tuple(argv[:3]) == ("kaggle", "datasets", "files"):
+            self.calls.append(list(argv))
+            out = self.listings.pop(0) if len(self.listings) > 1 else self.listings[0]
+            return subprocess.CompletedProcess(list(argv), 0, out, "")
+        return super().__call__(argv)
+
+
+def no_wait(seconds: float) -> None:
+    """Upload's wait, without the waiting."""
+
+
 @pytest.mark.parametrize(
     ("name", "slug"),
     [
@@ -273,14 +301,14 @@ def test_upload_creates_or_versions_a_private_dataset_of_the_folders_files(
     exists: bool, verb: list[str], tmp_path: Path
 ) -> None:
     (tmp_path / "train.jsonl").write_text("{}\n")
-    cli = Cli({("kaggle", "datasets", "status"): (0 if exists else 1, "ready" if exists else "")})
+    cli = DatasetCli(exists, [listing(("train.jsonl", 3, NEW))])
 
-    ref = kaggle.upload(cli, "someone", "figures", tmp_path)
+    ref = kaggle.upload(cli, "someone", "figures", tmp_path, wait=no_wait)
 
     assert ref == "someone/underhood-figures"
     meta = json.loads((tmp_path / "dataset-metadata.json").read_text())
     assert (meta["id"], meta["title"]) == (ref, "underhood-figures")
-    sent = [c for c in cli.kaggle_calls() if c[2] != "status"][-1]
+    sent = [c for c in cli.kaggle_calls() if c[2] not in ("status", "files")][-1]
     assert sent[:3] == ["kaggle", "datasets", verb[0]] and all(v in sent for v in verb)
     assert ["-p", str(tmp_path)] == sent[sent.index("-p") : sent.index("-p") + 2]
     assert "--public" not in sent and "-u" not in sent, "private"
@@ -297,7 +325,8 @@ def test_upload_refuses_a_folder_with_no_files(tmp_path: Path) -> None:
 def test_the_cli_uploads_a_dataset_and_a_push_attaches_it(
     kaggle_cli: Cli, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    kaggle_cli.answers[("kaggle", "datasets", "status")] = (1, "")  # not uploaded before
+    cli = DatasetCli(False, [listing(("train.jsonl", 3, NEW))])  # new, then processed
+    monkeypatch.setattr(kaggle, "_run", cli)
     data = tmp_path / "figures"
     data.mkdir()
     (data / "train.jsonl").write_text("{}\n")
@@ -311,4 +340,39 @@ def test_the_cli_uploads_a_dataset_and_a_push_attaches_it(
 
     meta = json.loads((tmp_path / "kaggle" / "sft" / "kernel-metadata.json").read_text())
     assert meta["dataset_sources"] == ["someone/underhood-figures"]
-    assert any(c[:3] == ["kaggle", "datasets", "create"] for c in kaggle_cli.kaggle_calls())
+    assert any(c[:3] == ["kaggle", "datasets", "create"] for c in cli.kaggle_calls())
+
+
+def test_upload_waits_until_the_new_version_lists_every_file(tmp_path: Path) -> None:
+    (tmp_path / "adapter.safetensors").write_text("weights")  # 7 bytes
+    (tmp_path / "test.jsonl").write_text("{}\n")  # 3 bytes
+    cli = DatasetCli(
+        True,
+        [
+            listing(("test.jsonl", 3, OLD)),  # the previous version, still current
+            listing(("test.jsonl", 3, NEW)),  # the new one, part-processed
+            listing(("adapter.safetensors", 7, NEW), ("test.jsonl", 3, NEW)),
+        ],
+    )
+    waited: list[float] = []
+
+    kaggle.upload(cli, "someone", "figures", tmp_path, wait=waited.append)
+
+    files = [c for c in cli.kaggle_calls() if c[2] == "files"]
+    assert len(files) == 3 and all("-v" in c for c in files)
+    assert waited == [config.KAGGLE_DATASET_POLL_SECONDS] * 2
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        pytest.param(listing(("adapter.safetensors", 7, OLD)), id="only the previous version"),
+        pytest.param(listing(("adapter.safetensors", 6, NEW)), id="a file at another size"),
+        pytest.param(listing(), id="no files at all"),
+    ],
+)
+def test_upload_raises_when_the_new_version_never_appears(current: str, tmp_path: Path) -> None:
+    (tmp_path / "adapter.safetensors").write_text("weights")
+
+    with pytest.raises(RuntimeError, match="not ready"):
+        kaggle.upload(DatasetCli(True, [current]), "someone", "figures", tmp_path, wait=no_wait)

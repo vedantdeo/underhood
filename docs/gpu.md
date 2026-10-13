@@ -19,3 +19,9 @@ Once `tests/training/test_train_gpu.py` is green:
 (about 30 GPU-hours a week) and `underhood-kaggle pull <name>` brings its output back; it refuses
 uncommitted or unpushed code, since the kernel clones the exact commit from GitHub. `underhood-hub`
 keeps a run folder in a private Hugging Face repo so a run can resume across 12-hour sessions.
+
+`underhood-kaggle data <name> --folder <dir>` uploads a folder as a private dataset for
+`push --dataset <name>` to mount, and returns only once Kaggle lists every file at its size with a
+creation time after the upload began. `kaggle datasets status` cannot tell you that: it reports the
+previous version as ready while the new one is still processing, and a kernel pushed in that window
+mounts nothing (the v3 eval, 2026-10-12).

@@ -12,12 +12,15 @@ secret HF_TOKEN and the run resumes from, and hands back to, the Hub (gpu.hub).
 from __future__ import annotations
 
 import argparse
+import csv
 import inspect
 import json
 import re
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from underhood import config
@@ -116,9 +119,13 @@ def pull(run: Runner, user: str, name: str, dest: Path) -> Path:
     return dest
 
 
-def upload(run: Runner, user: str, name: str, folder: Path) -> str:
-    """The files directly in `folder` as a private Kaggle dataset, created or given a new version;
-    its ref. Subfolders, such as a run's output, are skipped. ValueError for a folder with none."""
+def upload(
+    run: Runner, user: str, name: str, folder: Path, wait: Callable[[float], None] = time.sleep
+) -> str:
+    """The files directly in `folder` as a private Kaggle dataset, created or given a new version,
+    returned only once Kaggle has processed it, so a kernel pushed next can mount it; its ref.
+    Subfolders, such as a run's output, are skipped. ValueError for a folder with none;
+    RuntimeError if Kaggle fails to process it or it is not ready in time."""
     if not any(p.is_file() and p.name != "dataset-metadata.json" for p in folder.iterdir()):
         raise ValueError(f"no files to upload in {folder}")
     ref = f"{user}/{slug(name)}"
@@ -126,8 +133,46 @@ def upload(run: Runner, user: str, name: str, folder: Path) -> str:
     (folder / "dataset-metadata.json").write_text(json.dumps(meta, indent=2) + "\n")
     exists = run(["kaggle", "datasets", "status", ref]).returncode == 0
     verb = ["version", "-m", "underhood upload"] if exists else ["create"]
+    started = datetime.now(UTC) - timedelta(seconds=config.KAGGLE_CLOCK_SKEW_SECONDS)
     _call(run, ["kaggle", "datasets", *verb, "-p", str(folder), "-r", "skip"])
+    _wait_until_ready(run, ref, folder, started, wait)
     return ref
+
+
+def _wait_until_ready(
+    run: Runner, ref: str, folder: Path, started: datetime, wait: Callable[[float], None]
+) -> None:
+    """Poll the dataset's file listing until every file in `folder` is there, at its size, created
+    since `started`."""
+    wanted = {
+        p.name: p.stat().st_size
+        for p in folder.iterdir()
+        if p.is_file() and p.name != "dataset-metadata.json"
+    }
+    waited = 0.0
+    while True:
+        listed = _listing(_call(run, ["kaggle", "datasets", "files", ref, "-v"]))
+        if all(
+            name in listed and listed[name][0] == size and listed[name][1] >= started
+            for name, size in wanted.items()
+        ):
+            return
+        if waited >= config.KAGGLE_DATASET_READY_SECONDS:
+            raise RuntimeError(f"{ref} not ready after {waited:.0f}s: the new version is unlisted")
+        wait(config.KAGGLE_DATASET_POLL_SECONDS)
+        waited += config.KAGGLE_DATASET_POLL_SECONDS
+
+
+def _listing(out: str) -> dict[str, tuple[int, datetime]]:
+    """`kaggle datasets files -v` as name -> (size, creation time in UTC)."""
+    rows = csv.DictReader(out.splitlines())
+    return {
+        row["name"]: (
+            int(row["size"]),
+            datetime.fromisoformat(row["creationDate"]).replace(tzinfo=UTC),
+        )
+        for row in rows
+    }
 
 
 def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:

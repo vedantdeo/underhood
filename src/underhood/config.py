@@ -167,6 +167,9 @@ GPU_MFU: dict[str, float] = {
 KAGGLE_USER: str | None = "vedantdeo"  # or pass --user
 KAGGLE_ACCELERATOR = "NvidiaTeslaT4"
 KAGGLE_REPO_URL = "https://github.com/vedantdeo/underhood.git"
+KAGGLE_DATASET_POLL_SECONDS = 10  # between checks that an uploaded dataset is ready
+KAGGLE_DATASET_READY_SECONDS = 900  # give up waiting for it after this long
+KAGGLE_CLOCK_SKEW_SECONDS = 300  # slack between our clock and Kaggle's file timestamps
 HUB_RUNS_REPO = "underhood-runs"  # a private model repo under the logged-in Hub account
 
 # Loss-curve plots (training.curves). Categorical slots in assignment order, which is the data: do
