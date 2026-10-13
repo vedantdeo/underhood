@@ -14,13 +14,16 @@ import torch
 from safetensors.torch import load_file
 from transformers import BitsAndBytesConfig, Qwen3Config, Qwen3ForCausalLM
 
+from underhood import config
 from underhood.finetune.tool_sft import (
     GENERATION,
     IGNORE,
+    TASKS,
     Encoded,
     Example,
     Plan,
     Settings,
+    arguments,
     encode,
     examples,
     lora,
@@ -98,6 +101,14 @@ def test_a_conversation_with_no_tool_call_is_one_example() -> None:
     (only,) = examples(DIRECT, qwen_like)
 
     assert only.target == '{"figures": []}<|im_end|>'
+
+
+def test_a_conversation_with_no_tools_is_rendered_with_none() -> None:
+    headline = {"messages": cast(list[Message], DIRECT["messages"])}
+
+    (only,) = examples(headline, qwen_like)
+
+    assert "tools: []" in only.prompt and only.target == '{"figures": []}<|im_end|>'
 
 
 def test_a_renderer_that_does_not_open_an_assistant_turn_is_refused() -> None:
@@ -181,6 +192,51 @@ def test_train_steps_logs_finite_losses_and_saves_the_adapter(tmp_path: Path) ->
     saved = {p.name for p in (tmp_path / "adapter").iterdir()}
     assert {"adapter_config.json", "adapter_model.safetensors"} <= saved
     assert json.loads((tmp_path / "metrics.json").read_text())["steps"] == 2
+
+
+def test_a_keep_best_run_names_the_checkpoint_it_ended_on(tmp_path: Path) -> None:
+    rng = torch.Generator().manual_seed(1)
+    data = [
+        Encoded(ids := torch.randint(1, 64, (12,), generator=rng).tolist(), [IGNORE] * 6 + ids[6:])
+        for _ in range(8)
+    ]
+    settings = Settings(batch=2, accum=1, eval_steps=2, keep_best=True)
+
+    metrics = train(tiny_qwen(), 0, data, data[:2], tmp_path, settings, max_steps=4)
+
+    assert str(metrics["best_checkpoint"]).startswith("checkpoint-"), metrics
+
+
+@pytest.mark.parametrize(
+    ("task", "best", "save_steps"),
+    [
+        pytest.param(
+            "figures", False, config.TOOL_SFT_SAVE_STEPS, id="figures end on the last step"
+        ),
+        pytest.param(
+            "headlines",
+            True,
+            config.HEADLINE_SFT_EVAL_STEPS,
+            id="headlines save at each evaluation and end on the best",
+        ),
+    ],
+)
+def test_arguments_per_task(task: str, best: bool, save_steps: int, tmp_path: Path) -> None:
+    args = arguments(TASKS[task], tmp_path)
+
+    assert args.load_best_model_at_end is best
+    assert args.save_steps == save_steps and args.metric_for_best_model == "eval_loss"
+    assert args.greater_is_better is False
+
+
+def test_the_headline_task_reads_its_own_settings() -> None:
+    headlines = TASKS["headlines"]
+
+    assert (headlines.epochs, headlines.accum, headlines.eval_steps) == (
+        config.HEADLINE_SFT_EPOCHS,
+        config.HEADLINE_SFT_ACCUM,
+        config.HEADLINE_SFT_EVAL_STEPS,
+    )
 
 
 @pytest.mark.parametrize(
