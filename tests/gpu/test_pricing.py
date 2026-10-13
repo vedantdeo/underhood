@@ -1,12 +1,20 @@
 """What a run costs before it is rented: the time arithmetic, the bill, each offer's rate, and the
-card each offer rents."""
+card each offer rents; and what a call to a specialist hostllm serves costs."""
 
 from __future__ import annotations
 
 import pytest
+from hostllm.pricing import TokenPrice
 
 from underhood import config
-from underhood.gpu.pricing import card, estimated_seconds, hourly_usd, rental_usd
+from underhood.gpu.pricing import (
+    SERVED,
+    card,
+    estimated_seconds,
+    hourly_usd,
+    rental_usd,
+    served_usd,
+)
 
 
 @pytest.mark.parametrize(
@@ -45,6 +53,24 @@ def test_estimated_seconds_refuses_an_impossible_gpu(peak_flops: float, mfu: flo
 )
 def test_rental_usd(seconds: float, usd: float) -> None:
     assert rental_usd(seconds, 1.19) == pytest.approx(usd)
+
+
+@pytest.mark.parametrize(
+    ("input_tokens", "output_tokens", "usd"),
+    [
+        pytest.param(1_000_000, 0, 2.0, id="a million prompt tokens at the input price"),
+        pytest.param(0, 1_000_000, 30.0, id="a million answer tokens at the output price"),
+        pytest.param(500, 40, 0.0022, id="a prompt and its answer, added"),
+        pytest.param(0, 0, 0.0, id="nothing sent, nothing owed"),
+    ],
+)
+def test_served_usd(input_tokens: int, output_tokens: int, usd: float) -> None:
+    assert served_usd(input_tokens, output_tokens, TokenPrice(2.0, 30.0)) == pytest.approx(usd)
+
+
+def test_a_served_call_is_priced_at_hostllm_s_rate_unless_told_another() -> None:
+    assert served_usd(574, 36) == pytest.approx((574 * SERVED.input + 36 * SERVED.output) / 1e6)
+    assert 0 < SERVED.input < SERVED.output, "a prompt token is prefilled, an answer token decoded"
 
 
 RATES = {"cheap": 1.00, "dear": 2.00}

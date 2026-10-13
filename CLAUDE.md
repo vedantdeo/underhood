@@ -57,6 +57,10 @@ compute for it (`underhood.gpu`: Kaggle kernels, the Hub, run pricing). hostllm 
 stay up: the engine, its deployments (Modal, JarvisLabs Serverless) and their benchmarks. underhood
 publishes adapters and names what to host; hostllm imports nothing from it.
 
+underhood imports one thing from hostllm (2026-10-13): a served token's price, `hostllm.pricing`,
+re-exported by `underhood.gpu.pricing` with `served_usd`. hostllm is this repo's only dependency and
+installs nothing itself, so `underhood.gpu` still imports without torch.
+
 **Why:** a batch kernel that runs once and exits shares little with an endpoint that starts on
 demand, keeps weights warm and is measured under load. If hostllm later needs part of
 `underhood.gpu`, lift out that generic part then, shaped by a real second user.

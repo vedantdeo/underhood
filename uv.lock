@@ -517,6 +517,11 @@ wheels = [
 ]
 
 [[package]]
+name = "hostllm"
+version = "0.1.0"
+source = { git = "https://github.com/vedantdeo/hostllm?branch=main#67d17963a822dc6495864900c80cc9dd39d239f9" }
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -2150,6 +2155,9 @@ wheels = [
 name = "underhood"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "hostllm" },
+]
 
 [package.dev-dependencies]
 cloud = [
@@ -2179,6 +2187,7 @@ train = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "hostllm", git = "https://github.com/vedantdeo/hostllm?branch=main" }]
 
 [package.metadata.requires-dev]
 cloud = [{ name = "kaggle", specifier = ">=2.2.4" }]
