@@ -1,5 +1,6 @@
 """What a run takes on a rented GPU, in seconds and dollars, from the rates in config, and what a
-call to a specialist hostllm serves costs, at the per-token price hostllm measured.
+call to a specialist hostllm serves costs, at the per-token price hostllm measured for its own
+engine and for vLLM.
 
 The tests in tests/gpu/test_pricing.py are the specification: estimated_seconds, rental_usd,
 served_usd, hourly_usd, then card.
@@ -9,9 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from hostllm.pricing import SERVED, TokenPrice
+from hostllm.pricing import SERVED, VLLM_SERVED, TokenPrice
 
-__all__ = ["SERVED", "card", "estimated_seconds", "hourly_usd", "rental_usd", "served_usd"]
+__all__ = [
+    "SERVED",
+    "VLLM_SERVED",
+    "card",
+    "estimated_seconds",
+    "hourly_usd",
+    "rental_usd",
+    "served_usd",
+]
 
 
 def estimated_seconds(params: int, tokens: int, peak_flops: float, mfu: float) -> float:

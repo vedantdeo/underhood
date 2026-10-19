@@ -9,6 +9,7 @@ from hostllm.pricing import TokenPrice
 from underhood import config
 from underhood.gpu.pricing import (
     SERVED,
+    VLLM_SERVED,
     card,
     estimated_seconds,
     hourly_usd,
@@ -71,6 +72,12 @@ def test_served_usd(input_tokens: int, output_tokens: int, usd: float) -> None:
 def test_a_served_call_is_priced_at_hostllm_s_rate_unless_told_another() -> None:
     assert served_usd(574, 36) == pytest.approx((574 * SERVED.input + 36 * SERVED.output) / 1e6)
     assert 0 < SERVED.input < SERVED.output, "a prompt token is prefilled, an answer token decoded"
+
+
+def test_vllm_s_rate_is_hostllm_s_measurement_of_it() -> None:
+    from hostllm.pricing import VLLM_SERVED as measured
+
+    assert VLLM_SERVED == measured and VLLM_SERVED.output < SERVED.output
 
 
 RATES = {"cheap": 1.00, "dear": 2.00}
