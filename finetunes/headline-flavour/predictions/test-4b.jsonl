@@ -1,0 +1,50 @@
+{"id": "hl-001", "final": "{\"company\": \"Infosys\", \"metric\": \"profit\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": 11.5}", "calls": [], "error": null}
+{"id": "hl-002", "final": "{\"company\": \"TCS\", \"metric\": \"revenue\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": 7.9}", "calls": [], "error": null}
+{"id": "hl-003", "final": "{\"company\": \"Infy\", \"metric\": \"guidance\", \"quarter\": \"FY\", \"direction\": \"down\", \"change_pct\": 1.0}", "calls": [], "error": null}
+{"id": "hl-004", "final": "{\"company\": \"RIL\", \"metric\": \"profit\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": 5.2}", "calls": [], "error": null}
+{"id": "hl-005", "final": "{\"company\": \"HUL\", \"metric\": \"revenue\", \"quarter\": \"Q4\", \"direction\": \"flat\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-006", "final": "{\"company\": \"L&T\", \"metric\": \"orders\", \"quarter\": \"Q2\", \"direction\": \"unknown\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-007", "final": "{\"company\": \"Wipro\", \"metric\": \"headcount\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-008", "final": "{\"company\": \"HDFC Bank\", \"metric\": \"margin\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-009", "final": "{\"company\": \"Maruti Suzuki\", \"metric\": \"profit\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-010", "final": "{\"company\": \"Mahindra & Mahindra\", \"metric\": \"revenue\", \"quarter\": \"Q2\", \"direction\": \"down\", \"change_pct\": 12.0}", "calls": [], "error": null}
+{"id": "hl-011", "final": "{\"company\": \"Axis Bank\", \"metric\": \"profit\", \"quarter\": \"Q4\", \"direction\": \"up\", \"change_pct\": 4.0}", "calls": [], "error": null}
+{"id": "hl-012", "final": "{\"company\": \"ICICI Bank\", \"metric\": \"margin\", \"quarter\": \"Q3\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-013", "final": "{\"company\": \"Tech Mahindra\", \"metric\": \"revenue\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": 1.3}", "calls": [], "error": null}
+{"id": "hl-014", "final": "{\"company\": \"Sun Pharma\", \"metric\": \"profit\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": 28.0}", "calls": [], "error": null}
+{"id": "hl-015", "final": "{\"company\": \"Bajaj Finance\", \"metric\": \"profit\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": 22.0}", "calls": [], "error": null}
+{"id": "hl-016", "final": "{\"company\": \"Asian Paints\", \"metric\": \"revenue\", \"quarter\": \"Q4\", \"direction\": \"down\", \"change_pct\": 1.7}", "calls": [], "error": null}
+{"id": "hl-017", "final": "{\"company\": \"Nestle India\", \"metric\": \"guidance\", \"quarter\": \"FY\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-018", "final": "{\"company\": \"Delhivery\", \"metric\": \"revenue\", \"quarter\": \"Q1\", \"direction\": \"up\", \"change_pct\": 63.0}", "calls": [], "error": null}
+{"id": "hl-019", "final": "{\"company\": \"Adani Ports\", \"metric\": \"revenue\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": 9.4}", "calls": [], "error": null}
+{"id": "hl-020", "final": "{\"company\": \"Titan\", \"metric\": \"headcount\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-021", "final": "{\"company\": \"SBI\", \"metric\": \"profit\", \"quarter\": \"Q2\", \"direction\": \"flat\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-022", "final": "{\"company\": \"Hero MotoCorp\", \"metric\": \"margin\", \"quarter\": \"Q4\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-023", "final": "{\"company\": \"Britannia\", \"metric\": \"revenue\", \"quarter\": \"FY\", \"direction\": \"up\", \"change_pct\": 0.1}", "calls": [], "error": null}
+{"id": "hl-024", "final": "{\"company\": \"Coal India\", \"metric\": \"profit\", \"quarter\": \"Q2\", \"direction\": \"down\", \"change_pct\": 22.0}", "calls": [], "error": null}
+{"id": "hl-025", "final": "{\"company\": \"Tata Motors\", \"metric\": \"orders\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-026", "final": "{\"company\": \"HCL Tech\", \"metric\": \"revenue\", \"quarter\": \"Q1\", \"direction\": \"up\", \"change_pct\": 6.7}", "calls": [], "error": null}
+{"id": "hl-027", "final": "{\"company\": \"Dr Reddy's\", \"metric\": \"profit\", \"quarter\": \"Q3\", \"direction\": \"down\", \"change_pct\": 2.5}", "calls": [], "error": null}
+{"id": "hl-028", "final": "{\"company\": \"Vedanta\", \"metric\": \"headcount\", \"quarter\": \"unknown\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-029", "final": "{\"company\": \"Paytm\", \"metric\": \"revenue\", \"quarter\": \"unknown\", \"direction\": \"down\", \"change_pct\": 36.0}", "calls": [], "error": null}
+{"id": "hl-030", "final": "{\"company\": \"Bharti Airtel\", \"metric\": \"margin\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-031", "final": "{\"company\": \"Reliance Jio\", \"metric\": \"orders\", \"quarter\": \"unknown\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-032", "final": "{\"company\": \"Infosys\", \"metric\": \"none\", \"quarter\": \"unknown\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-033", "final": "{\"company\": \"Nifty IT companies\", \"metric\": \"none\", \"quarter\": \"Q3\", \"direction\": \"unknown\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-034", "final": "{\"company\": \"Zomato\", \"metric\": \"revenue\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-035", "final": "{\"company\": \"SBI Cards\", \"metric\": \"profit\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": 19.0}", "calls": [], "error": null}
+{"id": "hl-036", "final": "{\"company\": \"LIC\", \"metric\": \"revenue\", \"quarter\": \"H1\", \"direction\": \"up\", \"change_pct\": 21.0}", "calls": [], "error": null}
+{"id": "hl-037", "final": "{\"company\": \"Tata Steel\", \"metric\": \"profit\", \"quarter\": \"Q4\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-038", "final": "{\"company\": \"Nykaa\", \"metric\": \"growth\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": 22.0}", "calls": [], "error": null}
+{"id": "hl-039", "final": "{\"company\": \"Bajaj Auto\", \"metric\": \"orders\", \"quarter\": \"Q4\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-040", "final": "{\"company\": \"IndiGo\", \"metric\": \"profit\", \"quarter\": \"Q3\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-041", "final": "{\"company\": \"Hindalco\", \"metric\": \"other\", \"quarter\": \"Q2\", \"direction\": \"unknown\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-042", "final": "{\"company\": \"Wipro\", \"metric\": \"none\", \"quarter\": \"unknown\", \"direction\": \"unknown\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-043", "final": "{\"company\": \"DMart\", \"metric\": \"other\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-044", "final": "{\"company\": \"Kotak Mahindra Bank\", \"metric\": \"provisions\", \"quarter\": \"Q4\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-045", "final": "{\"company\": \"Ola Electric\", \"metric\": \"revenue\", \"quarter\": \"Q3\", \"direction\": \"down\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-046", "final": "{\"company\": \"UltraTech\", \"metric\": \"volumes\", \"quarter\": \"Q2\", \"direction\": \"up\", \"change_pct\": 6.0}", "calls": [], "error": null}
+{"id": "hl-047", "final": "{\"company\": \"Biocon\", \"metric\": \"profit\", \"quarter\": \"Q1\", \"direction\": \"up\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-048", "final": "{\"company\": \"Apollo Hospitals\", \"metric\": \"margin\", \"quarter\": \"Q2\", \"direction\": \"flat\", \"change_pct\": null}", "calls": [], "error": null}
+{"id": "hl-049", "final": "{\"company\": \"PVR Inox\", \"metric\": \"revenue\", \"quarter\": \"Q1\", \"direction\": \"down\", \"change_pct\": 9.0}", "calls": [], "error": null}
+{"id": "hl-050", "final": "{\"company\": \"Trent\", \"metric\": \"revenue\", \"quarter\": \"unknown\", \"direction\": \"up\", \"change_pct\": 45.0}", "calls": [], "error": null}

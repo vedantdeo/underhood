@@ -1,0 +1,10 @@
+{
+  "steps": 46,
+  "train_loss": 0.08496499846913376,
+  "eval_loss": 0.005345833022147417,
+  "seconds": 669.1,
+  "train_examples": 180,
+  "valid_examples": 20,
+  "best_checkpoint": "checkpoint-46",
+  "peak_gb": 9.77
+}
