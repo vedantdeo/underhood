@@ -29,6 +29,7 @@ DEPENDENCY_ORDER = (
     "tests/tooldata/test_labels.py",
     "tests/tooldata/test_augment.py",
     "tests/tooldata/test_build.py",
+    "tests/tooldata/test_research.py",
     "tests/gpu/test_hub.py",
     "tests/gpu/test_kaggle_job.py",
     "tests/gpu/test_kaggle.py",

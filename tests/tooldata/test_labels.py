@@ -87,7 +87,9 @@ def test_the_task_loads_and_renders_the_prompt(tmp_path: Path) -> None:
         pytest.param(labelled(2871590, "2871.59 * 10**3"), False, id="thousands, never named"),
         pytest.param(labelled(28715900, "2871.59 * 10**4"), False, id="no such scale"),
         pytest.param(labelled(99990000000, "9999 * 10**7"), False, id="a number not printed"),
-        pytest.param(labelled(2871.59, None), True, id="the bare cell, unscaled"),
+        pytest.param(
+            labelled(2871.59, None), False, id="the bare cell, its heading's crore left out"
+        ),
         pytest.param(labelled(28715900000, None), False, id="scaled with no call"),
         pytest.param(labelled(28715900000, "2871.59*10**7"), False, id="a call not in the form"),
         pytest.param(labelled(5, "5 + 0"), False, id="arithmetic that is not scaling"),
@@ -212,6 +214,20 @@ def test_a_label_that_fails_a_check_teaches_nothing(task: Task, bad: Label) -> N
         pytest.param(
             "(` million) 4,500", "4500 * 10**7", 45000000000, False, id="crore in a million table"
         ),
+        pytest.param(
+            "[Table · WIPRO-FY24 p.12 · Notes · = ×1000000]\nBorrowings 110,466.1",
+            "110466.1 * 10**6",
+            110466100000,
+            True,
+            id="a label's multiplier names its scale",
+        ),
+        pytest.param(
+            "[Table · WIPRO-FY24 p.12 · Notes · = ×1000000]\nBorrowings 110,466.1",
+            "110466.1 * 10**7",
+            1104661000000,
+            False,
+            id="a power the label's multiplier is not",
+        ),
         pytest.param("growth of 12%", "12 / 100", 0.12, True, id="a percentage needs no word"),
         pytest.param(
             "credit of 1,250 in the column",
@@ -268,6 +284,107 @@ def test_a_negative_value_needs_the_passage_to_print_it_negative(
 ) -> None:
     figure = labelled(value, call, "profit", "INR")
 
+    assert check_call(figure, passage) is ok
+
+
+@pytest.mark.parametrize(
+    ("passage", "figure", "ok"),
+    [
+        pytest.param(
+            "(H In Crore) Revenue from operations 44,685",
+            labelled(44685, None),
+            False,
+            id="money in a table its heading scales",
+        ),
+        pytest.param(
+            "Revenue clocked an all-time high at Rs 44,685 crore, up 23%.",
+            labelled(44685, None),
+            False,
+            id="money with its scale word beside it",
+        ),
+        pytest.param(
+            "(C in millions, except per share data) Revenue 890,884",
+            labelled(890884, None),
+            False,
+            id="a million heading with its exception",
+        ),
+        pytest.param(
+            "(H In Crore) Basic earnings per share 264.6",
+            labelled(264.6, None, "eps"),
+            True,
+            id="a per-share metric is not scaled",
+        ),
+        pytest.param(
+            "(H In Crore) dividend of H 140 per share",
+            labelled(140, None, "dividend"),
+            True,
+            id="nor is a dividend per share",
+        ),
+        pytest.param(
+            "(H In Crore) shares of face value H 10 each",
+            labelled(10, None, "other", "INR", "face value"),
+            True,
+            id="money printed per share or each",
+        ),
+        pytest.param(
+            "(H In Crore) employees 10,250",
+            labelled(10250, None, "employees", None),
+            True,
+            id="a count has no currency to scale",
+        ),
+        pytest.param(
+            "Revenue of Rs 44,685 for the quarter.",
+            labelled(44685, None),
+            True,
+            id="no scale named anywhere: the number as printed",
+        ),
+        pytest.param(
+            "penalty of ` 9,18,750 (Rupees Nine Lakhs Eighteen Thousand Seven Hundred Fifty)",
+            labelled(918750, None, "other", "INR", "penalty"),
+            True,
+            id="an amount written out in words is no scale heading",
+        ),
+        pytest.param(
+            "(USD Million) Receivables 97.83",
+            labelled(97.83, None, "receivables", "USD"),
+            False,
+            id="a currency before the scale",
+        ),
+        pytest.param(
+            "(Amount in ₹ crore) Borrowings 1,250",
+            labelled(1250, None, "debt"),
+            False,
+            id="amount in, then the currency and scale",
+        ),
+        pytest.param(
+            "(H In Crore) Borrowings 0.00",
+            labelled(0, None, "debt"),
+            True,
+            id="a zero is the same at any scale",
+        ),
+        pytest.param(
+            "(H In Crore) Revenue from operations 44,685",
+            labelled(446850000000, "44685 * 10**7"),
+            True,
+            id="the same money through its scaling call",
+        ),
+        pytest.param(
+            "[Table · WIPRO-FY24 p.40 · Revenue · ₹ in Million = ×1000000]\nRevenue 890,884",
+            labelled(890884, None),
+            False,
+            id="money under a label that names a multiplier, its heading unbracketed",
+        ),
+        pytest.param(
+            "[Table · WIPRO-FY24 p.40 · Employees]\nEmployees 234,054",
+            labelled(234054, None),
+            True,
+            id="a label naming no multiplier scales nothing",
+        ),
+    ],
+)
+def test_money_in_a_passage_that_names_its_scale_comes_through_its_scaling_call(
+    passage: str, figure: Label, ok: bool
+) -> None:
     assert check_call(figure, passage) is ok
 
 

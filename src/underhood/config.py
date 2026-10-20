@@ -99,6 +99,13 @@ TOOL_SFT_SAVE_STEPS = 25
 HEADLINE_SFT_EPOCHS = 2
 HEADLINE_SFT_ACCUM = 4
 HEADLINE_SFT_EVAL_STEPS = 15  # a third of an epoch
+# v4, the report analyst that searches (`--task research`): the 8B base, room for a whole trajectory
+# (a ~1,400-token prompt, ~1,500 a search, several turns), and settings for ~200 trajectories.
+RESEARCH_SFT_MODEL = "Qwen/Qwen3-8B"
+RESEARCH_SFT_MAX_TOKENS = 8192
+RESEARCH_SFT_EPOCHS = 3
+RESEARCH_SFT_ACCUM = 8
+RESEARCH_SFT_EVAL_STEPS = 20
 TOOL_EVAL_ROUNDS = 3  # a call, its answer, and one spare
 TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
 
@@ -106,6 +113,7 @@ TOOL_EVAL_MAX_NEW_TOKENS = 512  # replies averaged ~90 tokens in labelling
 # copies of a training answer with at least AUGMENT_LEAST labelled percentages; massaged copies of
 # every training answer, each step taken at MASSAGE_CHANCE, years moved by one of MASSAGE_SHIFTS.
 TOOL_DATA_DESCRIPTION_WORDS = 5  # the most words an other figure's description may have
+TOOL_DATA_PER_SHARE = ("dividend", "eps")  # metrics stated per share, never scaled by a heading
 TOOL_DATA_VALID_FRACTION = 0.1
 TOOL_DATA_SEED = 0
 TOOL_DATA_AUGMENT_COPIES = 3

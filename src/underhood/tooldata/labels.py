@@ -26,6 +26,19 @@ _SCALE_WORDS = {
     12: r"lakh\s+crores?|trillions?",
 }
 _PRINTED = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_ANY_SCALE = "|".join(_SCALE_WORDS.values())
+# A heading that scales a table: "(Rs in crore)", "(` million)", "(USD Million)", "(Amount in ₹
+# crore)": an opening bracket, at most "amount in", a currency mark and "in", then the scale word.
+_CURRENCY_MARK = r"(?:Rs\.?|INR|USD|US\s?\$|EUR|GBP|[₹`$€£]|[A-Z](?![a-z]))"
+_SCALE_HEADING = re.compile(
+    rf"\(\s*(?:(?:amounts?|figures|value)\s+in\s+)?(?:{_CURRENCY_MARK}\s*)?(?:in\s+)?"
+    rf"(?:{_CURRENCY_MARK}\s*)?(?:{_ANY_SCALE})(?![a-z])",
+    re.I,
+)
+# aigent's chunk label gives its scale as what it multiplies by: "= ×10000000".
+_MULTIPLIER = re.compile(r"= ×(\d+)\b")
+_SCALE_AFTER = re.compile(rf"^\s{{0,2}}(?:{_ANY_SCALE})(?![a-z])", re.I)
+_PER_UNIT_AFTER = re.compile(r"^\s{0,2}(?:per\s+(?:equity\s+)?share|each)\b", re.I)
 _NUMBER_WORDS = {
     name: i
     for i, name in enumerate(
@@ -149,7 +162,10 @@ def described(figure: Label, passage: str, change: str) -> bool:
 
 
 def _named(power: int, passage: str) -> bool:
-    """Whether the passage names the scale 10**power: a word for it, anywhere in the text."""
+    """Whether the passage names the scale 10**power: a word for it anywhere in the text, or a
+    label's multiplier."""
+    if any(int(found) == 10**power for found in _MULTIPLIER.findall(passage)):
+        return True
     words = _SCALE_WORDS.get(power)
     return (
         words is not None
@@ -167,15 +183,33 @@ def _printed_negative(number: float, passage: str) -> bool:
     return False
 
 
+def _left_unscaled(figure: Label, passage: str) -> bool:
+    """Whether money given as printed belongs scaled: the passage heads it with a scale or a label's
+    multiplier, or prints a scale word right after the number, and it is not a per-share figure or
+    one printed per share or each."""
+    if figure.unit is None or figure.value == 0 or figure.metric in config.TOOL_DATA_PER_SHARE:
+        return False
+    after = [
+        passage[found.end() :]
+        for found in _PRINTED.finditer(passage)
+        if math.isclose(float(found.group().replace(",", "")), abs(figure.value))
+    ]
+    if any(_PER_UNIT_AFTER.match(text) for text in after):
+        return False
+    headed = _SCALE_HEADING.search(passage) or _MULTIPLIER.search(passage)
+    return headed is not None or any(_SCALE_AFTER.match(t) for t in after)
+
+
 def check_call(figure: Label, passage: str, change: str | None = None) -> bool:
     """Whether a label's value is the passage's own number, scaled by a scale the passage names or
     made a fraction by its call, the call gives that value (signed or not, for a negative), and a
-    negative is printed negative, or is a `change` that is a fall."""
+    negative is printed negative, or is a `change` that is a fall. Money a passage scales, by a
+    heading or a word beside it, must come through its scaling call (`_left_unscaled`)."""
     falls = change is not None and figure.description == change
     if figure.call is None:
         if figure.value < 0 and not falls and not _printed_negative(abs(figure.value), passage):
             return False
-        return abs(figure.value) in printed(passage)
+        return abs(figure.value) in printed(passage) and not _left_unscaled(figure, passage)
     match = _CALL.fullmatch(figure.call.strip())
     if match is None or (match.group(2) is not None and not _named(int(match.group(2)), passage)):
         return False
