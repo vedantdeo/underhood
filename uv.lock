@@ -519,7 +519,7 @@ wheels = [
 [[package]]
 name = "hostllm"
 version = "0.1.0"
-source = { git = "https://github.com/vedantdeo/hostllm?branch=main#67d17963a822dc6495864900c80cc9dd39d239f9" }
+source = { git = "https://github.com/vedantdeo/hostllm?branch=main#e8564f950236676b42d693cadbfb04d00a89c923" }
 
 [[package]]
 name = "httpcore"

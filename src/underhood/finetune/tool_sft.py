@@ -1,5 +1,6 @@
 """Tool-use SFT: Qwen3 learns, from aigent's extract_figures conversations, to call calculate for a
-scaled amount and answer in JSON; with --task headlines, the headline reader's tool-less rows.
+scaled amount and answer in JSON; with --task headlines, the headline reader's tool-less rows;
+with --task research, v4's search-and-answer trajectories on the 8B base.
 One example per assistant turn, its prompt rendered exactly as at inference; the loss falls on that
 turn alone. LoRA through PEFT in mixed precision, bf16 from Ampere
 on and fp16 before it; with --quantize (the default) a QLoRA run on a 4-bit base, for a T4.
@@ -105,8 +106,11 @@ def pad(batch: Sequence[Encoded], pad_id: int) -> dict[str, Tensor]:
 
 @dataclass(frozen=True)
 class Settings:
-    """What `lora` and `train` read, defaulting to config."""
+    """What `lora`, `train` and the run read, defaulting to config: the base, the longest example
+    kept, and the training settings."""
 
+    model: str = config.TOOL_SFT_MODEL
+    max_tokens: int = config.TOOL_SFT_MAX_TOKENS
     rank: int = config.TOOL_SFT_RANK
     alpha: int = config.TOOL_SFT_ALPHA
     dropout: float = config.TOOL_SFT_DROPOUT
@@ -128,6 +132,15 @@ TASKS = {
         accum=config.HEADLINE_SFT_ACCUM,
         eval_steps=config.HEADLINE_SFT_EVAL_STEPS,
         save_steps=config.HEADLINE_SFT_EVAL_STEPS,
+        keep_best=True,
+    ),
+    "research": Settings(
+        model=config.RESEARCH_SFT_MODEL,
+        max_tokens=config.RESEARCH_SFT_MAX_TOKENS,
+        epochs=config.RESEARCH_SFT_EPOCHS,
+        accum=config.RESEARCH_SFT_ACCUM,
+        eval_steps=config.RESEARCH_SFT_EVAL_STEPS,
+        save_steps=config.RESEARCH_SFT_EVAL_STEPS,
         keep_best=True,
     ),
 }
@@ -294,7 +307,7 @@ def main() -> None:
     parser.add_argument("--task", choices=sorted(TASKS), default="figures", help="the settings")
     parser.add_argument("--data", type=Path, required=True, help="holds train.jsonl, valid.jsonl")
     parser.add_argument("--out", type=Path, required=True, help="run folder: adapter, metrics")
-    parser.add_argument("--model", default=config.TOOL_SFT_MODEL)
+    parser.add_argument("--model", default=None, help="the base; the task's own unless given")
     parser.add_argument("--max-steps", type=int, default=None, help="stop early, for a smoke run")
     parser.add_argument(
         "--quantize",
@@ -309,8 +322,10 @@ def main() -> None:
         help="recompute activations in the backward pass: slower, far less memory",
     )
     args = parser.parse_args()
+    settings = TASKS[args.task]
+    base = args.model or settings.model
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(base)
 
     def render(messages: Sequence[Message], tools: Sequence[Message], generate: bool) -> str:
         return str(
@@ -329,7 +344,7 @@ def main() -> None:
     sets: dict[str, list[Encoded]] = {}
     for name in ("train", "valid"):
         cut = [e for c in load(args.data / f"{name}.jsonl") for e in examples(c, render)]
-        kept = [x for x in (encode(e, tokenize, config.TOOL_SFT_MAX_TOKENS) for e in cut) if x]
+        kept = [x for x in (encode(e, tokenize, settings.max_tokens) for e in cut) if x]
         sets[name] = kept
         print(f"{name}: {len(kept)} examples from {len(cut)} assistant turns")
 
@@ -337,7 +352,7 @@ def main() -> None:
     half = autocast_dtype(torch.device("cuda")) if cuda else None
     how = plan(cuda, bool(args.quantize), bool(args.checkpointing))
     print(f"half precision {half}, quantized {how.quantized}, checkpointing {how.checkpointing}")
-    loaded = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs(half, how.quantized))
+    loaded = AutoModelForCausalLM.from_pretrained(base, **model_kwargs(half, how.quantized))
     model = prepare(cast(PreTrainedModel, loaded), how)
     print(f"attention {model.config._attn_implementation}")
     args.out.mkdir(parents=True, exist_ok=True)
@@ -348,7 +363,7 @@ def main() -> None:
         sets["train"],
         sets["valid"],
         args.out,
-        TASKS[args.task],
+        settings,
         args.max_steps,
         half=half,
         checkpointing=how.checkpointing,

@@ -219,6 +219,12 @@ def test_a_keep_best_run_names_the_checkpoint_it_ended_on(tmp_path: Path) -> Non
             config.HEADLINE_SFT_EVAL_STEPS,
             id="headlines save at each evaluation and end on the best",
         ),
+        pytest.param(
+            "research",
+            True,
+            config.RESEARCH_SFT_EVAL_STEPS,
+            id="research saves at each evaluation and ends on the best",
+        ),
     ],
 )
 def test_arguments_per_task(task: str, best: bool, save_steps: int, tmp_path: Path) -> None:
@@ -227,6 +233,24 @@ def test_arguments_per_task(task: str, best: bool, save_steps: int, tmp_path: Pa
     assert args.load_best_model_at_end is best
     assert args.save_steps == save_steps and args.metric_for_best_model == "eval_loss"
     assert args.greater_is_better is False
+
+
+def test_the_research_task_trains_the_8b_on_whole_trajectories() -> None:
+    research, figures = TASKS["research"], TASKS["figures"]
+
+    assert (research.model, research.max_tokens) == (
+        config.RESEARCH_SFT_MODEL,
+        config.RESEARCH_SFT_MAX_TOKENS,
+    )
+    assert research.model == "Qwen/Qwen3-8B" and research.max_tokens >= 8192
+    assert (research.epochs, research.accum) == (
+        config.RESEARCH_SFT_EPOCHS,
+        config.RESEARCH_SFT_ACCUM,
+    )
+    assert (figures.model, figures.max_tokens) == (
+        config.TOOL_SFT_MODEL,
+        config.TOOL_SFT_MAX_TOKENS,
+    )
 
 
 def test_the_headline_task_reads_its_own_settings() -> None:
